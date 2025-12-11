@@ -4,8 +4,8 @@ const sqlite3 = require('sqlite3').verbose();
 function connectToSQLite() {
   return new Promise((resolve, reject) => {
     console.log('Connecting to SQLite database...');
-    const db = new sqlite3.Database('STO-1202-2.sqlite', sqlite3.OPEN_READWRITE, (err) => {
-    // const db = new sqlite3.Database('sitpa-1202-2.sqlite', sqlite3.OPEN_READWRITE, (err) => {
+    // const db = new sqlite3.Database('STO-1205.sqlite', sqlite3.OPEN_READWRITE, (err) => {
+    const db = new sqlite3.Database('sitpa-1205.sqlite', sqlite3.OPEN_READWRITE, (err) => {
       if (err) {
         console.error('Error connecting to SQLite database:', err.message);
         return reject(err);
@@ -45,10 +45,11 @@ async function importDBFToMongoDB() {
     // console.log('Tables in database:', tables);
 
     // await createMergedTable(db);
+    let mergedTable = 'mergedhistory';
     // await refineData(db);
 
     // Get records from SQLite
-    const records = await queryDB(db, 'SELECT * FROM eqhistor order by CHRONO ASC');
+    const records = await queryDB(db, `SELECT * FROM ${mergedTable} order by CHRONO ASC`);
     console.log(`Retrieved ${records.length} records from SQLite`);
 
     // Rest of your MongoDB import logic here...
@@ -91,15 +92,20 @@ async function importDBFToMongoDB() {
     // let companyId = 'cpn_ae6e8d21-b6eb-4202-b0bf-75f2989c7f4f';
 
     // preprod
-    let clientId = 'cli_86a59b08-af61-465c-abf6-63e96957b213';
-    let warehouseId = 'ware_e65ab86e-b754-4c5e-9fae-ef5d9a034f8b';
-    let companyId = 'cpn_ec37519e-c113-4e8b-b262-8f8882a0561e';
+    // let clientId = 'cli_2feccdab-3684-47c8-b87a-3a93983bdfc1';
+    // let warehouseId = 'ware_e65ab86e-b754-4c5e-9fae-ef5d9a034f8b';
+    // let companyId = 'cpn_4de26cdc-5a1d-4bde-8c03-3a1e6ba1988a';
 
     // prod
     // let clientId = 'cli_2feccdab-3684-47c8-b87a-3a93983bdfc1';
     // let warehouseId = 'ware_e65ab86e-b754-4c5e-9fae-ef5d9a034f8b';
     // let companyId = 'cpn_4de26cdc-5a1d-4bde-8c03-3a1e6ba1988a';
-    
+
+    // testmigrat
+    let clientId = 'cli_6436372e-015b-48c0-9ca7-d6f60c4d9620';
+    let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
+    let companyId = 'cpn_e86a10e2-a820-4eaa-962e-414016832805';
+
     const mappedRecords = [];
     let extraEvent = null;
     const processedAttendu = new Map();
@@ -175,7 +181,7 @@ async function importDBFToMongoDB() {
         // create extra attendu entre event
         const ssccs = await queryDB(
           db,
-          'SELECT * FROM eqhistor where NUM_BL = ? and COD_MVT = ? and TYP_MVT = ? order by DAT_VAL desc, HEU_VAL desc',
+          `SELECT * FROM ${mergedTable} where NUM_BL = ? and COD_MVT = ? and TYP_MVT = ? order by DAT_VAL desc, HEU_VAL desc`,
           [record.NUM_BL, 'EX', '23']
         );
 
@@ -369,7 +375,7 @@ async function importDBFToMongoDB() {
         // create extra sortie commande event
         const ssccs = await queryDB(
           db,
-          'SELECT * FROM eqhistor where NUM_CMD = ? order by DAT_VAL desc, HEU_VAL desc',
+          `SELECT * FROM ${mergedTable} where NUM_CMD = ? order by DAT_VAL desc, HEU_VAL desc`,
           [record.NUM_CMD]
         );
 
@@ -421,7 +427,7 @@ async function importDBFToMongoDB() {
         previousValue = `${record.QTE_SCDN}`;
         currentValue = '0';
         locationAddress = convertLocationAddress(record);
-      }else if (record.COD_MVT == 'EP' && record.TYP_MVT == '7K') {
+      } else if (record.COD_MVT == 'EP' && record.TYP_MVT == '7K') {
         action = 'exit';
         actionDetail = 'via_reappro';
         eventType = 'sscc_exit_by_reappro';
@@ -432,7 +438,7 @@ async function importDBFToMongoDB() {
 
         const ssccs = await queryDB(
           db,
-          'SELECT * FROM eqhistor where NUM_PAL = ? and CHRONO = ? and COD_MVT = ? and TYP_MVT = ? order by DAT_VAL desc, HEU_VAL desc',
+          `SELECT * FROM ${mergedTable} where NUM_PAL = ? and CHRONO = ? and COD_MVT = ? and TYP_MVT = ? order by DAT_VAL desc, HEU_VAL desc`,
           [record.NUM_PAL, record.CHRONO, 'EP', '2K']
         );
         let noCdns = [];
@@ -442,7 +448,7 @@ async function importDBFToMongoDB() {
         }
 
         if (ssccs.length > 0) {
-           extraEvent = {
+          extraEvent = {
             chrono: `${i + 1}`,
             created_at: mergeDateAndTime(ssccs[0].DAT_VAL, ssccs[0].HEU_VAL),
             // sscc: ssccs[0].NUM_PAL,
@@ -502,11 +508,19 @@ async function importDBFToMongoDB() {
         extraEvent.sscc = record.NUM_PAL;
       }
 
-      if (extraEvent != null && extraEvent.object_search_type == 'sscc' && extraEvent.no_cdn.length == 0) {
+      if (
+        extraEvent != null &&
+        extraEvent.object_search_type == 'sscc' &&
+        extraEvent.no_cdn.length == 0
+      ) {
         extraEvent.no_cdn = [record.NUMERO];
       }
 
-      if (extraEvent != null && extraEvent.object_search_type == 'sscc' && extraEvent.carton_number == 0) {
+      if (
+        extraEvent != null &&
+        extraEvent.object_search_type == 'sscc' &&
+        extraEvent.carton_number == 0
+      ) {
         extraEvent.carton_number = record.QTE_SCDN;
       }
 
