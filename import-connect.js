@@ -5,7 +5,7 @@ function connectToSQLite() {
   return new Promise((resolve, reject) => {
     console.log('Connecting to SQLite database...');
     // const db = new sqlite3.Database('STO-1205.sqlite', sqlite3.OPEN_READWRITE, (err) => {
-    const db = new sqlite3.Database('sitpa-1205.sqlite', sqlite3.OPEN_READWRITE, (err) => {
+    const db = new sqlite3.Database('SITPA-1210.sqlite', sqlite3.OPEN_READWRITE, (err) => {
       if (err) {
         console.error('Error connecting to SQLite database:', err.message);
         return reject(err);
@@ -45,7 +45,7 @@ async function importDBFToMongoDB() {
     // console.log('Tables in database:', tables);
 
     // await createMergedTable(db);
-    let mergedTable = 'mergedhistory';
+    let mergedTable = 'merged';
     // await refineData(db);
 
     // Get records from SQLite
@@ -102,14 +102,25 @@ async function importDBFToMongoDB() {
     // let companyId = 'cpn_4de26cdc-5a1d-4bde-8c03-3a1e6ba1988a';
 
     // testmigrat
-    let clientId = 'cli_6436372e-015b-48c0-9ca7-d6f60c4d9620';
+    // let clientId = 'cli_6436372e-015b-48c0-9ca7-d6f60c4d9620';
+    // let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
+    // let companyId = 'cpn_e86a10e2-a820-4eaa-962e-414016832805';
+
+    // sitpa_SITPA - staging
+    // let clientId = 'cli_2c5bd8f1-71f7-4679-9cf8-22b7b12dbb31';
+    // let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
+    // let companyId = 'cpn_e1f7c5ff-87c7-4630-975c-16229a85a051';
+
+    // sitpa_SITPA - app
+    let clientId = 'cli_2c5bd8f1-71f7-4679-9cf8-22b7b12dbb31';
     let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
-    let companyId = 'cpn_e86a10e2-a820-4eaa-962e-414016832805';
+    let companyId = 'cpn_e1f7c5ff-87c7-4630-975c-16229a85a051';
 
     const mappedRecords = [];
     let extraEvent = null;
     const processedAttendu = new Map();
     const processedCommande = new Map();
+    const mapSscc = new Map();
 
     for (let i = 0; i < records.length; i++) {
       const record = records[i];
@@ -181,8 +192,8 @@ async function importDBFToMongoDB() {
         // create extra attendu entre event
         const ssccs = await queryDB(
           db,
-          `SELECT * FROM ${mergedTable} where NUM_BL = ? and COD_MVT = ? and TYP_MVT = ? order by DAT_VAL desc, HEU_VAL desc`,
-          [record.NUM_BL, 'EX', '23']
+          `SELECT * FROM ${mergedTable} where NUM_BL = ? and COD_MVT in ('AM', 'AT') and TYP_MVT = '12' order by DAT_VAL desc, HEU_VAL desc`,
+          [record.NUM_BL]
         );
 
         if (ssccs.length > 0) {
@@ -207,6 +218,11 @@ async function importDBFToMongoDB() {
             movement_state: '1',
             code: 'EX',
           };
+
+          for (let j = 0; j < ssccs.length; j++) {
+            let ssccRecord = ssccs[j];
+            mapSscc.set(ssccRecord.NUM_PAL, { carton_number: ssccRecord.QTE_SCDN || 0 });
+          }
         }
       } else if (record.COD_MVT == 'EX' && record.TYP_MVT == '23') {
         eventType = 'A-9-1';
@@ -269,9 +285,19 @@ async function importDBFToMongoDB() {
         eventType = 'regularization_entree';
         action = 'entry';
         actionDetail = 'regularization_positive';
-        previousValue = `${record.QTE_SORI}`;
-        currentValue = `${record.QTE_SORI + record.QTE_SCDN}`;
-        cartonNumber = record.QTE_SORI + record.QTE_SCDN;
+        cartonNumber = record.QTE_SCDN;
+        let ssccRecord = mapSscc.get(record.NUM_PAL);
+        if (!ssccRecord) {
+          previousValue = '0';
+          currentValue = `${record.QTE_SCDN}`;
+          mapSscc.set(record.NUM_PAL, { carton_number: record.QTE_SCDN });
+        } else {
+          previousValue = `${ssccRecord.carton_number}`;
+          mapSscc.set(record.NUM_PAL, {
+            carton_number: ssccRecord?.carton_number + record.QTE_SCDN,
+          });
+          currentValue = `${ssccRecord.carton_number + record.QTE_SCDN}`;
+        }
       } else if (record.COD_MVT == 'AP' && (record.TYP_MVT == '2L' || record.TYP_MVT == '7L')) {
         eventType = 'cancel_picking';
         action = 'entry';
@@ -346,6 +372,7 @@ async function importDBFToMongoDB() {
         currentValue = 'loaded';
         locationAddress = convertLocationAddress(record);
         cadre = record.NUM_CMD;
+        mapSscc.set(record.NUM_PAL, undefined);
       } else if (
         (record.COD_MVT == 'SO' && record.TYP_MVT == '61') ||
         (record.COD_MVT == 'CM' && record.TYP_MVT == '61')
@@ -375,7 +402,7 @@ async function importDBFToMongoDB() {
         // create extra sortie commande event
         const ssccs = await queryDB(
           db,
-          `SELECT * FROM ${mergedTable} where NUM_CMD = ? order by DAT_VAL desc, HEU_VAL desc`,
+          `SELECT * FROM ${mergedTable} where NUM_CMD = ? and COD_MVT in ('SO', 'CM') and TYP_MVT = '61' order by DAT_VAL desc, HEU_VAL desc`,
           [record.NUM_CMD]
         );
 
@@ -404,8 +431,21 @@ async function importDBFToMongoDB() {
             movement_state: '1',
             code: 'SO',
           };
+
+          for (let j = 0; j < ssccs.length; j++) {
+            let ssccRecord = ssccs[j];
+            mapSscc.set(ssccRecord.NUM_PAL, { carton_number: ssccRecord.QTE_SCDN || 0 });
+          }
         }
       } else if (record.COD_MVT == 'AR' && record.TYP_MVT == '10') {
+        if (processedAttendu.has(record.NUM_BL)) {
+          continue;
+        }
+
+        if (!record.DAT_VAL) {
+          continue;
+        }
+
         action = 'create';
         actionDetail = 'file';
         eventType = 'A-1';
@@ -420,13 +460,27 @@ async function importDBFToMongoDB() {
         userCodeNom = record.UTI_CRE;
         createdAt = mergeDateAndTime(record.DAT_CRE, record.HEU_CRE);
         processedAttendu.set(record.NUM_BL, true);
+
+        const query = `SELECT * FROM ${mergedTable} where NUM_BL = ? and COD_MVT = ? and TYP_MVT = ? order by DAT_VAL desc, HEU_VAL desc`;
+        const params = [record.NUM_BL, 'AR', '10'];
+        const ssccs = await queryDB(db, query, params);
+
+        for (let j = 0; j < ssccs.length; j++) {
+          let ssccRecord = ssccs[j];
+          mapSscc.set(ssccRecord.NUM_PAL, { carton_number: ssccRecord.QTE_SCDN || 0 });
+        }
       } else if (record.COD_MVT == 'SR' && record.TYP_MVT == '71') {
         action = 'exit';
         actionDetail = 'regularization_negative';
         eventType = 'regularization_sortie';
-        previousValue = `${record.QTE_SCDN}`;
-        currentValue = '0';
+        cartonNumber = record.QTE_SCDN;
         locationAddress = convertLocationAddress(record);
+        let ssccRecord = mapSscc.get(record.NUM_PAL);
+        previousValue = `${ssccRecord.carton_number}`;
+        mapSscc.set(record.NUM_PAL, {
+          carton_number: ssccRecord?.carton_number - record.QTE_SCDN,
+        });
+        currentValue = `${previousValue - record.QTE_SCDN}`;
       } else if (record.COD_MVT == 'EP' && record.TYP_MVT == '7K') {
         action = 'exit';
         actionDetail = 'via_reappro';
@@ -491,12 +545,12 @@ async function importDBFToMongoDB() {
         noCdns = [];
       }
 
-      if (objectSearchType === 'sscc' && cartonNumber == 0) {
-        cartonNumber = record.QTE_SCDN;
-      }
-
       if (objectSearchType === 'sscc' && locationAddress == '') {
         locationAddress = convertLocationAddress(record);
+      }
+
+      if (objectSearchType === 'sscc' && cartonNumber == 0) {
+        cartonNumber = record.QTE_SCDN;
       }
 
       if (extraEvent != null && extraEvent.object_search_type == 'sscc') {
@@ -535,6 +589,7 @@ async function importDBFToMongoDB() {
         continue;
       }
 
+      const ssccRecord = mapSscc.get(record.NUM_PAL);
       const mappedRecord = {
         chrono: `${i + 1}`,
         created_at: createdAt,
@@ -624,19 +679,41 @@ function mergeDateAndTime(date, time) {
 }
 
 function convertLocationAddress(record) {
-  if (record.NIVEAU == '-1') {
-    return `${record.ZONE}${record.ALLEE}${record.TRAVEE}00`;
-  }
+  let niv = record.NIVEAU;
+  let zone = record.ZONE;
+  let allee = record.ALLEE;
+  let trave = record.TRAVEE;
 
-  return `${record.ZONE}${record.ALLEE}${record.TRAVEE}${record.NIVEAU}`;
+  return refineLocationData(niv, zone, allee, trave);
 }
 
 function convertLocationAddressOut(record) {
-  if (record.NIV_ORI == '-1') {
-    return `${record.ZON_ORI}${record.ALL_ORI}${record.TRA_ORI}00`;
+  let niv = record.NIV_ORI;
+  let zone = record.ZON_ORI;
+  let allee = record.ALL_ORI;
+  let trave = record.TRA_ORI;
+
+  return refineLocationData(niv, zone, allee, trave);
+}
+
+function refineLocationData(niv, zone, allee, trave) {
+  if (niv == '-1') {
+    niv = '00';
   }
 
-  return `${record.ZON_ORI}${record.ALL_ORI}${record.TRA_ORI}${record.NIV_ORI}`;
+  while (allee.length < 3) {
+    allee = allee + ' ';
+  }
+
+  if ((trave.length == 2 && niv.includes('D')) || niv.includes('E') || niv.includes('F')) {
+    trave = ' ' + trave;
+  }
+
+  if ((trave.length == 2 && niv.includes('A')) || niv.includes('B') || niv.includes('C')) {
+    trave = trave + ' ';
+  }
+
+  return `${zone}${allee}${trave}${niv}`;
 }
 
 function convertConditionnementLevel(record) {
