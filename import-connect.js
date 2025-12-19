@@ -107,14 +107,14 @@ async function importDBFToMongoDB() {
     // let companyId = 'cpn_e86a10e2-a820-4eaa-962e-414016832805';
 
     // sitpa_SITPA - staging
-    // let clientId = 'cli_2c5bd8f1-71f7-4679-9cf8-22b7b12dbb31';
-    // let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
-    // let companyId = 'cpn_e1f7c5ff-87c7-4630-975c-16229a85a051';
-
-    // sitpa_SITPA - app
     let clientId = 'cli_2c5bd8f1-71f7-4679-9cf8-22b7b12dbb31';
     let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
     let companyId = 'cpn_e1f7c5ff-87c7-4630-975c-16229a85a051';
+
+    // sitpa_SITPA - app
+    // let clientId = 'cli_2c5bd8f1-71f7-4679-9cf8-22b7b12dbb31';
+    // let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
+    // let companyId = 'cpn_e1f7c5ff-87c7-4630-975c-16229a85a051';
 
     const mappedRecords = [];
     let extraEvent = null;
@@ -135,6 +135,7 @@ async function importDBFToMongoDB() {
       if (record.TYP_MVT == '30') {
         continue;
       }
+
       // console.log(
       //   `Processing i[${i}]: COD_MVT=${record.COD_MVT}, TYP_MVT=${record.TYP_MVT}, chrono ${record.CHRONO}, TYP_CDN ${record.TYP_CDN}`
       // );
@@ -298,6 +299,7 @@ async function importDBFToMongoDB() {
           });
           currentValue = `${ssccRecord.carton_number + record.QTE_SCDN}`;
         }
+        cadre = record.NUM_BL;
       } else if (record.COD_MVT == 'AP' && (record.TYP_MVT == '2L' || record.TYP_MVT == '7L')) {
         eventType = 'cancel_picking';
         action = 'entry';
@@ -335,6 +337,7 @@ async function importDBFToMongoDB() {
         currentValue = 'PAL';
         // aggregate all adjacent chEvents
         let palRecord = record;
+        let cartonRecord = record;
         if (record.TYP_CDN == 'PAL') {
           palRecord = record;
         }
@@ -349,6 +352,10 @@ async function importDBFToMongoDB() {
           if (jRecord.TYP_CDN == 'PAL') {
             palRecord = jRecord;
           }
+
+          if (jRecord.TYP_CDN == 'UD') {
+            cartonRecord = jRecord;
+          }
         }
 
         // pal => ud
@@ -357,6 +364,10 @@ async function importDBFToMongoDB() {
           previousValue = 'PAL';
           currentValue = 'UD';
         }
+
+        createdAt = mergeDateAndTime(cartonRecord.DAT_VAL, cartonRecord.HEU_VAL);
+        userCodeNom = cartonRecord.UTI_VAL;
+
         cartonNumber = palRecord.QTE_SCDN;
       } else if (record.COD_MVT == 'MV' && record.TYP_MVT == '74') {
         eventType = '8';
