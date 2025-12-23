@@ -4,8 +4,8 @@ const sqlite3 = require('sqlite3').verbose();
 function connectToSQLite() {
   return new Promise((resolve, reject) => {
     console.log('Connecting to SQLite database...');
-    const db = new sqlite3.Database('STO-1219.sqlite', sqlite3.OPEN_READWRITE, (err) => {
-      // const db = new sqlite3.Database('SITPA-1210.sqlite', sqlite3.OPEN_READWRITE, (err) => {
+    // const db = new sqlite3.Database('STO-1219.sqlite', sqlite3.OPEN_READWRITE, (err) => {
+    const db = new sqlite3.Database('SITPA-1210.sqlite', sqlite3.OPEN_READWRITE, (err) => {
       if (err) {
         console.error('Error connecting to SQLite database:', err.message);
         return reject(err);
@@ -45,7 +45,8 @@ async function importDBFToMongoDB() {
     // console.log('Tables in database:', tables);
 
     // await createMergedTable(db);
-    let mergedTable = 'eqhistormerged';
+    // let mergedTable = 'eqhistormerged';
+    let mergedTable = 'merged';
     // await refineData(db);
 
     // Get records from SQLite
@@ -132,7 +133,7 @@ async function importDBFToMongoDB() {
       //   continue
       // }
 
-      if (record.TYP_MVT == '30') {
+      if (record.TYP_MVT == '30' || record.DAT_VAL == null) {
         continue;
       }
 
