@@ -4,8 +4,8 @@ const sqlite3 = require('sqlite3').verbose();
 function connectToSQLite() {
   return new Promise((resolve, reject) => {
     console.log('Connecting to SQLite database...');
-    // const db = new sqlite3.Database('STO-1205.sqlite', sqlite3.OPEN_READWRITE, (err) => {
-    const db = new sqlite3.Database('SITPA-1210.sqlite', sqlite3.OPEN_READWRITE, (err) => {
+    const db = new sqlite3.Database('STO-1219.sqlite', sqlite3.OPEN_READWRITE, (err) => {
+      // const db = new sqlite3.Database('SITPA-1210.sqlite', sqlite3.OPEN_READWRITE, (err) => {
       if (err) {
         console.error('Error connecting to SQLite database:', err.message);
         return reject(err);
@@ -45,7 +45,7 @@ async function importDBFToMongoDB() {
     // console.log('Tables in database:', tables);
 
     // await createMergedTable(db);
-    let mergedTable = 'merged';
+    let mergedTable = 'eqhistormerged';
     // await refineData(db);
 
     // Get records from SQLite
@@ -67,9 +67,9 @@ async function importDBFToMongoDB() {
     console.log('Inserting records into MongoDB...');
 
     // linh
-    // let clientId = 'cli_8a4e507a-857a-4671-9a77-a35626bd3f88';
-    // let warehouseId = 'ware_e65ab86e-b754-4c5e-9fae-ef5d9a034f8b';
-    // let companyId = 'cpn_845a5be6-5c48-4cd7-a3c7-bc181406ae3b';
+    let clientId = 'cli_8a4e507a-857a-4671-9a77-a35626bd3f88';
+    let warehouseId = 'ware_e65ab86e-b754-4c5e-9fae-ef5d9a034f8b';
+    let companyId = 'cpn_845a5be6-5c48-4cd7-a3c7-bc181406ae3b';
 
     // ta11
     // let clientId = 'cli_3f538cc1-15f1-4dca-ad4f-9eb7a79d4ec1';
@@ -107,9 +107,9 @@ async function importDBFToMongoDB() {
     // let companyId = 'cpn_e86a10e2-a820-4eaa-962e-414016832805';
 
     // sitpa_SITPA - staging
-    let clientId = 'cli_2c5bd8f1-71f7-4679-9cf8-22b7b12dbb31';
-    let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
-    let companyId = 'cpn_e1f7c5ff-87c7-4630-975c-16229a85a051';
+    // let clientId = 'cli_2c5bd8f1-71f7-4679-9cf8-22b7b12dbb31';
+    // let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
+    // let companyId = 'cpn_e1f7c5ff-87c7-4630-975c-16229a85a051';
 
     // sitpa_SITPA - app
     // let clientId = 'cli_2c5bd8f1-71f7-4679-9cf8-22b7b12dbb31';
@@ -218,6 +218,7 @@ async function importDBFToMongoDB() {
             movement_type: '23',
             movement_state: '1',
             code: 'EX',
+            extra_data: extraData,
           };
 
           for (let j = 0; j < ssccs.length; j++) {
