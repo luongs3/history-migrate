@@ -5,7 +5,7 @@ function connectToSQLite() {
   return new Promise((resolve, reject) => {
     console.log('Connecting to SQLite database...');
     // const db = new sqlite3.Database('STO-1219.sqlite', sqlite3.OPEN_READWRITE, (err) => {
-    const db = new sqlite3.Database('SITPA-1210.sqlite', sqlite3.OPEN_READWRITE, (err) => {
+    const db = new sqlite3.Database('blottiere-0123.sqlite', sqlite3.OPEN_READWRITE, (err) => {
       if (err) {
         console.error('Error connecting to SQLite database:', err.message);
         return reject(err);
@@ -45,8 +45,8 @@ async function importDBFToMongoDB() {
     // console.log('Tables in database:', tables);
 
     // await createMergedTable(db);
-    // let mergedTable = 'eqhistormerged';
-    let mergedTable = 'merged';
+    let mergedTable = 'eqhistormerged';
+    // let mergedTable = 'merged'; // sto
     // await refineData(db);
 
     // Get records from SQLite
@@ -67,20 +67,10 @@ async function importDBFToMongoDB() {
     // Step 4: Insert records into MongoDB - Insert only 1 for now
     console.log('Inserting records into MongoDB...');
 
-    // linh
-    let clientId = 'cli_8a4e507a-857a-4671-9a77-a35626bd3f88';
-    let warehouseId = 'ware_e65ab86e-b754-4c5e-9fae-ef5d9a034f8b';
-    let companyId = 'cpn_845a5be6-5c48-4cd7-a3c7-bc181406ae3b';
-
-    // ta11
-    // let clientId = 'cli_3f538cc1-15f1-4dca-ad4f-9eb7a79d4ec1';
-    // let warehouseId = 'ware_acf69c06-b600-4b4d-936c-bb7045fb9f4f';
-    // let companyId = 'cpn_56806096-2665-462d-9817-2e17c5d30693';
-
-    // ta22
-    // let clientId = 'cli_6e699a4a-5bc7-4c3c-a763-963cf6a352a4';
-    // let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
-    // let companyId = 'cpn_ea3fe4ab-0ae3-4bc6-a244-fa668e084fec';
+    // staging - blottiere_blottiere
+    let clientId = 'cli_1e1851e8-4f7b-4b2a-9428-5759a6b2c1aa';
+    let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
+    let companyId = 'cpn_194d12ca-a830-4757-a21c-7c9b9ff58c27';
 
     // clie31
     // let clientId = 'cli_93873136-737b-42cd-ae68-46d771767e3b';
@@ -92,15 +82,25 @@ async function importDBFToMongoDB() {
     // let warehouseId = 'ware_e65ab86e-b754-4c5e-9fae-ef5d9a034f8b';
     // let companyId = 'cpn_ae6e8d21-b6eb-4202-b0bf-75f2989c7f4f';
 
-    // preprod
+    // preprod-sto
     // let clientId = 'cli_2feccdab-3684-47c8-b87a-3a93983bdfc1';
     // let warehouseId = 'ware_e65ab86e-b754-4c5e-9fae-ef5d9a034f8b';
     // let companyId = 'cpn_4de26cdc-5a1d-4bde-8c03-3a1e6ba1988a';
 
-    // prod
+    // preprod-sitpa
+    // let clientId = 'cli_8d1fd43d-2f1d-452e-bb7f-35bd9f1bf828';
+    // let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
+    // let companyId = 'cpn_4f45bd18-e857-4cf2-880a-2fd58daa02ba';
+
+    // prod-sto
     // let clientId = 'cli_2feccdab-3684-47c8-b87a-3a93983bdfc1';
     // let warehouseId = 'ware_e65ab86e-b754-4c5e-9fae-ef5d9a034f8b';
     // let companyId = 'cpn_4de26cdc-5a1d-4bde-8c03-3a1e6ba1988a';
+
+    // prod-sitpa
+    // let clientId = 'cli_52b099d8-6ccb-4438-b156-db48341fb61b';
+    // let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
+    // let companyId = 'cpn_00d5bcf8-b5c6-43c5-a705-24d7c7475a17';
 
     // testmigrat
     // let clientId = 'cli_6436372e-015b-48c0-9ca7-d6f60c4d9620';
@@ -374,7 +374,7 @@ async function importDBFToMongoDB() {
       } else if (record.COD_MVT == 'MV' && record.TYP_MVT == '74') {
         eventType = '8';
         action = 'exit';
-        cadre = record.NUM_CMD || record.NUM_BL;
+        cadre = record.NUM_BL || record.NUM_CMD;
         locationAddress = convertLocationAddressOut(record);
       } else if (record.COD_MVT == 'SO' && record.TYP_MVT == '79') {
         eventType = '25-1';
