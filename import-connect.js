@@ -1,18 +1,22 @@
 const { MongoClient } = require('mongodb');
 const sqlite3 = require('sqlite3').verbose();
+const { mapRecords } = require('./lib/mapper');
 
 function connectToSQLite() {
   return new Promise((resolve, reject) => {
     console.log('Connecting to SQLite database...');
-    // const db = new sqlite3.Database('STO-1219.sqlite', sqlite3.OPEN_READWRITE, (err) => {
-    const db = new sqlite3.Database('blottiere-0123.sqlite', sqlite3.OPEN_READWRITE, (err) => {
-      if (err) {
-        console.error('Error connecting to SQLite database:', err.message);
-        return reject(err);
+    const db = new sqlite3.Database(
+      process.env.SQLITE_FILE || 'nwf-20261012.sqlite',
+      sqlite3.OPEN_READWRITE,
+      (err) => {
+        if (err) {
+          console.error('Error connecting to SQLite database:', err.message);
+          return reject(err);
+        }
+        console.log('Connected to SQLite database');
+        resolve(db);
       }
-      console.log('Connected to SQLite database');
-      resolve(db);
-    });
+    );
   });
 }
 
@@ -29,9 +33,10 @@ function queryDB(db, sql, params = []) {
 }
 
 async function importDBFToMongoDB() {
-  const mongoUri = 'mongodb://admin:password@localhost:27017';
+  const mongoUri = process.env.MONGO_URI || 'mongodb://admin:password@localhost:27017';
   const databaseName = 'logs';
   const collectionName = 'histories_migrated';
+  const chunkSize = 10000;
 
   let client;
   let db;
@@ -45,12 +50,16 @@ async function importDBFToMongoDB() {
     // console.log('Tables in database:', tables);
 
     // await createMergedTable(db);
-    let mergedTable = 'eqhistormerged';
+    let mergedTable = process.env.MERGED_TABLE || 'eqhistormerged';
+    // let mergedTable = 'eqhistorcur';
     // let mergedTable = 'merged'; // sto
     // await refineData(db);
 
-    // Get records from SQLite
-    const records = await queryDB(db, `SELECT * FROM ${mergedTable} order by CHRONO ASC`);
+    // Get records from SQLite (CHRONO alone is not enough: nwf 91 rows share CHRONO=0.001)
+    const records = await queryDB(
+      db,
+      `SELECT * FROM ${mergedTable} ORDER BY CHRONO ASC, DAT_CRE ASC, HEU_CRE ASC`
+    );
     console.log(`Retrieved ${records.length} records from SQLite`);
 
     // Rest of your MongoDB import logic here...
@@ -67,586 +76,55 @@ async function importDBFToMongoDB() {
     // Step 4: Insert records into MongoDB - Insert only 1 for now
     console.log('Inserting records into MongoDB...');
 
-    // staging - blottiere_blottiere
-    let clientId = 'cli_1e1851e8-4f7b-4b2a-9428-5759a6b2c1aa';
-    let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
-    let companyId = 'cpn_194d12ca-a830-4757-a21c-7c9b9ff58c27';
-
-    // clie31
-    // let clientId = 'cli_93873136-737b-42cd-ae68-46d771767e3b';
-    // let warehouseId = 'ware_90ef2825-f885-4b20-93a5-2925c03c4345';
-    // let companyId = 'cpn_6857d468-bb1e-41b2-a6c4-bd44432ccb49';
-
-    // staging-app
-    // let clientId = 'cli_3270ce39-b53a-462b-9498-079480cd9a0c';
-    // let warehouseId = 'ware_e65ab86e-b754-4c5e-9fae-ef5d9a034f8b';
-    // let companyId = 'cpn_ae6e8d21-b6eb-4202-b0bf-75f2989c7f4f';
-
-    // preprod-sto
-    // let clientId = 'cli_2feccdab-3684-47c8-b87a-3a93983bdfc1';
+    // preprod - Leroy Merlin
+    // let clientId = 'cli_da9ae6e2-064d-4144-8309-9b796f4458ea';
     // let warehouseId = 'ware_e65ab86e-b754-4c5e-9fae-ef5d9a034f8b';
     // let companyId = 'cpn_4de26cdc-5a1d-4bde-8c03-3a1e6ba1988a';
 
-    // preprod-sitpa
-    // let clientId = 'cli_8d1fd43d-2f1d-452e-bb7f-35bd9f1bf828';
-    // let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
-    // let companyId = 'cpn_4f45bd18-e857-4cf2-880a-2fd58daa02ba';
-
-    // prod-sto
-    // let clientId = 'cli_2feccdab-3684-47c8-b87a-3a93983bdfc1';
+    // preprod - Quipment
+    // let clientId = 'cli_2052c8af-9d66-40ed-a2ea-4dd349bbdaec';
     // let warehouseId = 'ware_e65ab86e-b754-4c5e-9fae-ef5d9a034f8b';
     // let companyId = 'cpn_4de26cdc-5a1d-4bde-8c03-3a1e6ba1988a';
 
-    // prod-sitpa
-    // let clientId = 'cli_52b099d8-6ccb-4438-b156-db48341fb61b';
+    // prod - Leroy Merlin
+    // let clientId = 'cli_735423e2-22fb-4612-8817-5e30ec2a551f';
+    // let warehouseId = 'ware_e65ab86e-b754-4c5e-9fae-ef5d9a034f8b';
+    // let companyId = 'cpn_4de26cdc-5a1d-4bde-8c03-3a1e6ba1988a';
+
+    // prod - Quipment
+    // let clientId = 'cli_5ba75359-4f3d-4d59-874a-ab0b72ca2816';
+    // let warehouseId = 'ware_e65ab86e-b754-4c5e-9fae-ef5d9a034f8b';
+    // let companyId = 'cpn_4de26cdc-5a1d-4bde-8c03-3a1e6ba1988a';
+
+    // beta Cerelia
+    // let clientId = 'cli_ceaa1009-ba8e-443d-a1a5-d1b0646ef85d';
     // let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
-    // let companyId = 'cpn_00d5bcf8-b5c6-43c5-a705-24d7c7475a17';
+    // let companyId = 'cpn_fea5ec5c-699e-40ff-9fe8-5a33e2b95873';
 
-    // testmigrat
-    // let clientId = 'cli_6436372e-015b-48c0-9ca7-d6f60c4d9620';
-    // let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
-    // let companyId = 'cpn_e86a10e2-a820-4eaa-962e-414016832805';
+    // staging - NWF
+    let clientId = process.env.CLIENT_ID || 'cli_5df6e8fe-d747-4d7b-b09c-ddadf22a7e4a';
+    let warehouseId = process.env.WAREHOUSE_ID || 'ware_6e792213-3895-40b9-92f8-071e1eb96b5c';
+    let companyId = process.env.COMPANY_ID || 'cpn_96c4d2b0-169b-421b-910b-800bb0f0055e';
 
-    // sitpa_SITPA - staging
-    // let clientId = 'cli_2c5bd8f1-71f7-4679-9cf8-22b7b12dbb31';
-    // let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
-    // let companyId = 'cpn_e1f7c5ff-87c7-4630-975c-16229a85a051';
+    const mappedRecords = await mapRecords({
+      records,
+      queryDB: (sql, params) => queryDB(db, sql, params),
+      ctx: { clientId, warehouseId, companyId, mergedTable },
+    });
+    console.log(`Mapped ${mappedRecords.length} records`);
 
-    // sitpa_SITPA - app
-    // let clientId = 'cli_2c5bd8f1-71f7-4679-9cf8-22b7b12dbb31';
-    // let warehouseId = 'ware_0213df8a-6665-4ba4-a834-21b04c69199d';
-    // let companyId = 'cpn_e1f7c5ff-87c7-4630-975c-16229a85a051';
-
-    const mappedRecords = [];
-    let extraEvent = null;
-    const processedAttendu = new Map();
-    const processedCommande = new Map();
-    const mapSscc = new Map();
-
-    for (let i = 0; i < records.length; i++) {
-      const record = records[i];
-      extraEvent = null;
-      // if (record.COD_CLI != 'STO') {
-      //   continue;
-      // }
-      // if (!(record.COD_MVT == 'EP' && record.TYP_MVT == '7K')) {
-      //   continue
-      // }
-
-      if (record.TYP_MVT == '30' || record.DAT_VAL == null) {
-        continue;
-      }
-
-      // console.log(
-      //   `Processing i[${i}]: COD_MVT=${record.COD_MVT}, TYP_MVT=${record.TYP_MVT}, chrono ${record.CHRONO}, TYP_CDN ${record.TYP_CDN}`
-      // );
-
-      let createdAt = mergeDateAndTime(record.DAT_VAL, record.HEU_VAL);
-      let currentValue = record.BLC_REF;
-      let previousValue = record.BLC_AVA;
-      let objectSearchType = 'sscc';
-      let action = 'create';
-      let actionDetail = 'manual';
-      let cadre = '';
-      let eventType = '';
-      let objectType = 'stock';
-      let objectNumber = record.NUM_PAL;
-      let sscc = record.NUM_PAL;
-      let referenceNumber = '';
-      let lotNom = '';
-      let dluo = 0;
-      let cartonNumber = 0;
-      let qte = 0;
-      let locationAddress = '';
-      let extraData = {};
-      let noCdns = [];
-      let tier = '';
-      let userCodeNom = record.UTI_VAL;
-      let movementType = record.TYP_MVT;
-      let movementState = record.ETAT;
-      let code = record.COD_MVT;
-
-      if (
-        (record.COD_MVT == 'AM' && record.TYP_MVT == '12') ||
-        (record.COD_MVT == 'AT' && record.TYP_MVT == '12')
-      ) {
-        if (processedAttendu.has(record.NUM_BL)) {
-          continue;
-        }
-        // console.log(
-        //   `Processing i[${i}]: COD_MVT=${record.COD_MVT}, TYP_MVT=${record.TYP_MVT}, chrono ${record.CHRONO}, NUM_PAL ${record.NUM_PAL}`
-        // );
-        action = 'create';
-        actionDetail = 'file';
-        eventType = 'A-1';
-        objectType = 'attendu';
-        objectSearchType = 'attendu';
-        previousValue = '';
-        currentValue = 'created';
-        objectNumber = record.NUM_BL;
-        cadre = record.NUM_BL;
-        extraData = { is_deffective_attendu: false };
-        tier = record.COD_FOU;
-        userCodeNom = record.UTI_CRE;
-        createdAt = mergeDateAndTime(record.DAT_CRE, record.HEU_CRE);
-        processedAttendu.set(record.NUM_BL, true);
-
-        // create extra attendu entre event
-        const ssccs = await queryDB(
-          db,
-          `SELECT * FROM ${mergedTable} where NUM_BL = ? and COD_MVT in ('AM', 'AT') and TYP_MVT = '12' order by DAT_VAL desc, HEU_VAL desc`,
-          [record.NUM_BL]
-        );
-
-        if (ssccs.length > 0) {
-          // in here, find the record
-          extraEvent = {
-            chrono: `${i + 1}`,
-            created_at: mergeDateAndTime(ssccs[0].DAT_VAL, ssccs[0].HEU_VAL),
-            // sscc: ssccs[0].NUM_PAL,
-            life_cycle_chrono: ssccs[0].CHRONO,
-            object_search_type: objectSearchType,
-            object_type: objectType,
-            object_number: objectNumber,
-            event_type: 'A-10',
-            action: 'entry',
-            cadre: record.NUM_BL,
-            client_id: clientId,
-            warehouse_id: warehouseId,
-            company_id: companyId,
-            tier: tier,
-            user_code_nom: userCodeNom,
-            movement_type: '23',
-            movement_state: '1',
-            code: 'EX',
-            extra_data: extraData,
-          };
-
-          for (let j = 0; j < ssccs.length; j++) {
-            let ssccRecord = ssccs[j];
-            mapSscc.set(ssccRecord.NUM_PAL, { carton_number: ssccRecord.QTE_SCDN || 0 });
-          }
-        }
-      } else if (record.COD_MVT == 'EX' && record.TYP_MVT == '23') {
-        eventType = 'A-9-1';
-        action = 'entry';
-        actionDetail = 'received_at_dock';
-        previousValue = 'in_reception';
-        currentValue = 'reput_away';
-        cadre = record.NUM_BL || record.NUM_CMD;
-        let currentLocation = convertLocationAddress(record);
-        let previousLocation = convertLocationAddressOut(record);
-        locationAddress = currentLocation;
-        if (previousLocation != currentLocation) {
-          locationAddress = previousLocation;
-          mappedRecords.push({
-            chrono: `${i + 2}`,
-            created_at: createdAt,
-            life_cycle_chrono: record.CHRONO,
-            object_search_type: 'sscc',
-            object_type: 'stock',
-            object_number: record.NUM_PAL,
-            event_type: 'sscc_putaway_done',
-            action: 'entry',
-            action_detail: 'put_in_stock',
-            previous_value: 'in_storage',
-            current_value: 'put_away',
-            location_address: currentLocation,
-            reference_number: record.REF,
-            carton_number: record.QTE_SCDN,
-            lot_nom: record.NUM_IDF,
-            dluo: convertDLUO(record),
-            no_cdn: [record.NUMERO],
-            sscc: record.NUM_PAL,
-            qte: qte,
-            conditionement_level: convertConditionnementLevel(record),
-            cadre: record.NUM_BL || record.NUM_CMD,
-            client_id: clientId,
-            warehouse_id: warehouseId,
-            company_id: companyId,
-            tier: tier,
-            user_code_nom: userCodeNom,
-            movement_type: movementType,
-            movement_state: movementState,
-            code: code,
-          });
-        }
-      } else if (
-        (record.COD_MVT == 'MV' && record.TYP_MVT == '24') ||
-        (record.COD_MVT == 'ME' && record.TYP_MVT == '2G')
-      ) {
-        eventType = '6';
-        action = 'entry';
-        locationAddress = convertLocationAddress(record);
-        cadre = record.NUM_BL || record.NUM_CMD;
-      } else if (record.COD_MVT == 'ME' && record.TYP_MVT == '7G') {
-        eventType = '6';
-        action = 'exit';
-        locationAddress = convertLocationAddressOut(record);
-        cadre = record.NUM_CMD || record.NUM_BL;
-      } else if (record.COD_MVT == 'RE' && record.TYP_MVT == '2+') {
-        eventType = 'regularization_entree';
-        action = 'entry';
-        actionDetail = 'regularization_positive';
-        cartonNumber = record.QTE_SCDN;
-        let ssccRecord = mapSscc.get(record.NUM_PAL);
-        if (!ssccRecord) {
-          previousValue = '0';
-          currentValue = `${record.QTE_SCDN}`;
-          mapSscc.set(record.NUM_PAL, { carton_number: record.QTE_SCDN });
-        } else {
-          previousValue = `${ssccRecord.carton_number}`;
-          mapSscc.set(record.NUM_PAL, {
-            carton_number: ssccRecord?.carton_number + record.QTE_SCDN,
-          });
-          currentValue = `${ssccRecord.carton_number + record.QTE_SCDN}`;
-        }
-        cadre = record.NUM_BL;
-      } else if (record.COD_MVT == 'AP' && (record.TYP_MVT == '2L' || record.TYP_MVT == '7L')) {
-        eventType = 'cancel_picking';
-        action = 'entry';
-        actionDetail = 'cancel_picking';
-        previousValue = 'UD';
-        currentValue = 'PAL';
-        // aggregate all adjacent chEvents
-        let palRecord = record;
-        if (record.TYP_CDN == 'PAL') {
-          palRecord = record;
-        }
-
-        for (let j = i + 1; j < records.length; j++) {
-          const jRecord = records[j];
-          if (jRecord.COD_MVT !== 'AP' || jRecord.CHRONO != record.CHRONO) {
-            i = j - 1;
-            break;
-          }
-
-          if (jRecord.TYP_CDN == 'PAL') {
-            palRecord = jRecord;
-          }
-        }
-
-        if (palRecord.TYP_MVT == '7L') {
-          previousValue = 'PAL';
-          currentValue = 'UD';
-        }
-        cartonNumber = palRecord.QTE_SORI;
-      } else if (record.COD_MVT == 'CH' && (record.TYP_MVT == '2A' || record.TYP_MVT == '7A')) {
-        action = 'edit';
-        actionDetail = 'edit_update';
-        eventType = 'sscc_stock_wrapped';
-        previousValue = 'UD';
-        currentValue = 'PAL';
-        // aggregate all adjacent chEvents
-        let palRecord = record;
-        let cartonRecord = record;
-        if (record.TYP_CDN == 'PAL') {
-          palRecord = record;
-        }
-
-        for (let j = i + 1; j < records.length; j++) {
-          const jRecord = records[j];
-          if (jRecord.COD_MVT !== 'CH' || jRecord.CHRONO != record.CHRONO) {
-            i = j - 1;
-            break;
-          }
-
-          if (jRecord.TYP_CDN == 'PAL') {
-            palRecord = jRecord;
-          }
-
-          if (jRecord.TYP_CDN == 'UD') {
-            cartonRecord = jRecord;
-          }
-        }
-
-        // pal => ud
-        if (palRecord.TYP_MVT == '7A') {
-          eventType = 'sscc_stock_unwrapped';
-          previousValue = 'PAL';
-          currentValue = 'UD';
-        }
-
-        createdAt = mergeDateAndTime(cartonRecord.DAT_VAL, cartonRecord.HEU_VAL);
-        userCodeNom = cartonRecord.UTI_VAL;
-
-        cartonNumber = palRecord.QTE_SCDN;
-      } else if (record.COD_MVT == 'MV' && record.TYP_MVT == '74') {
-        eventType = '8';
-        action = 'exit';
-        cadre = record.NUM_BL || record.NUM_CMD;
-        locationAddress = convertLocationAddressOut(record);
-      } else if (record.COD_MVT == 'SO' && record.TYP_MVT == '79') {
-        eventType = '25-1';
-        objectType = 'stock';
-        action = 'exit';
-        actionDetail = 'loading_exit';
-        previousValue = 'loading';
-        currentValue = 'loaded';
-        locationAddress = convertLocationAddress(record);
-        cadre = record.NUM_CMD;
-        mapSscc.set(record.NUM_PAL, undefined);
-      } else if (
-        (record.COD_MVT == 'SO' && record.TYP_MVT == '61') ||
-        (record.COD_MVT == 'CM' && record.TYP_MVT == '61')
-      ) {
-        if (processedCommande.has(record.NUM_CMD)) {
-          continue;
-        }
-        eventType = 'C-1';
-        objectType = 'commande';
-        objectSearchType = 'commande';
-        action = 'create';
-        previousValue = '';
-        currentValue = '';
-        objectNumber = record.NUM_CMD || record.NUM_BL;
-        // sscc = record.NUM_PAL;
-        cadre = record.NUM_CMD || record.NUM_BL;
-        tier = record.COD_DES;
-        userCodeNom = record.UTI_CRE;
-        createdAt = mergeDateAndTime(record.DAT_CRE, record.HEU_CRE);
-        if (record.ETAT == '1') {
-          actionDetail = 'file';
-          previousValue = '';
-          currentValue = 'created';
-        }
-
-        processedCommande.set(record.NUM_CMD, true);
-        // create extra sortie commande event
-        const ssccs = await queryDB(
-          db,
-          `SELECT * FROM ${mergedTable} where NUM_CMD = ? and COD_MVT in ('SO', 'CM') and TYP_MVT = '61' order by DAT_VAL desc, HEU_VAL desc`,
-          [record.NUM_CMD]
-        );
-
-        if (ssccs.length > 0) {
-          // in here, find the record
-          extraEvent = {
-            chrono: `${i + 1}`,
-            created_at: mergeDateAndTime(ssccs[0].DAT_VAL, ssccs[0].HEU_VAL),
-            // sscc: ssccs[0].NUM_PAL,
-            life_cycle_chrono: ssccs[0].CHRONO,
-            object_search_type: objectSearchType,
-            object_type: objectType,
-            object_number: objectNumber,
-            event_type: 'C-17',
-            action: 'exit',
-            action_detail: 'loading_exit',
-            previous_value: 'loading',
-            current_value: 'loaded',
-            cadre: record.NUM_CMD || record.NUM_BL,
-            client_id: clientId,
-            warehouse_id: warehouseId,
-            company_id: companyId,
-            tier: tier,
-            user_code_nom: userCodeNom,
-            movement_type: '79',
-            movement_state: '1',
-            code: 'SO',
-          };
-
-          for (let j = 0; j < ssccs.length; j++) {
-            let ssccRecord = ssccs[j];
-            mapSscc.set(ssccRecord.NUM_PAL, { carton_number: ssccRecord.QTE_SCDN || 0 });
-          }
-        }
-      } else if (record.COD_MVT == 'AR' && record.TYP_MVT == '10') {
-        if (processedAttendu.has(record.NUM_BL)) {
-          continue;
-        }
-
-        if (!record.DAT_VAL) {
-          continue;
-        }
-
-        action = 'create';
-        actionDetail = 'file';
-        eventType = 'A-1';
-        objectType = 'attendu';
-        objectSearchType = 'attendu';
-        previousValue = '';
-        currentValue = 'created';
-        objectNumber = record.NUM_BL;
-        cadre = record.NUM_BL;
-        extraData = { is_deffective_attendu: true };
-        tier = record.COD_FOU;
-        userCodeNom = record.UTI_CRE;
-        createdAt = mergeDateAndTime(record.DAT_CRE, record.HEU_CRE);
-        processedAttendu.set(record.NUM_BL, true);
-
-        const query = `SELECT * FROM ${mergedTable} where NUM_BL = ? and COD_MVT = ? and TYP_MVT = ? order by DAT_VAL desc, HEU_VAL desc`;
-        const params = [record.NUM_BL, 'AR', '10'];
-        const ssccs = await queryDB(db, query, params);
-
-        for (let j = 0; j < ssccs.length; j++) {
-          let ssccRecord = ssccs[j];
-          mapSscc.set(ssccRecord.NUM_PAL, { carton_number: ssccRecord.QTE_SCDN || 0 });
-        }
-      } else if (record.COD_MVT == 'SR' && record.TYP_MVT == '71') {
-        action = 'exit';
-        actionDetail = 'regularization_negative';
-        eventType = 'regularization_sortie';
-        cartonNumber = record.QTE_SCDN;
-        locationAddress = convertLocationAddress(record);
-        let ssccRecord = mapSscc.get(record.NUM_PAL);
-        previousValue = `${ssccRecord.carton_number}`;
-        mapSscc.set(record.NUM_PAL, {
-          carton_number: ssccRecord?.carton_number - record.QTE_SCDN,
-        });
-        currentValue = `${previousValue - record.QTE_SCDN}`;
-      } else if (record.COD_MVT == 'EP' && record.TYP_MVT == '7K') {
-        action = 'exit';
-        actionDetail = 'via_reappro';
-        eventType = 'sscc_exit_by_reappro';
-        previousValue = 'Dispo';
-        currentValue = '-';
-        cartonNumber = record.QTE_SCDN;
-        locationAddress = convertLocationAddress(record);
-
-        const ssccs = await queryDB(
-          db,
-          `SELECT * FROM ${mergedTable} where NUM_PAL = ? and CHRONO = ? and COD_MVT = ? and TYP_MVT = ? order by DAT_VAL desc, HEU_VAL desc`,
-          [record.NUM_PAL, record.CHRONO, 'EP', '2K']
-        );
-        let noCdns = [];
-        for (let i = 0; i < ssccs.length; i++) {
-          const sscc = ssccs[i];
-          noCdns.push(sscc.NUMERO);
-        }
-
-        if (ssccs.length > 0) {
-          extraEvent = {
-            chrono: `${i + 1}`,
-            created_at: mergeDateAndTime(ssccs[0].DAT_VAL, ssccs[0].HEU_VAL),
-            // sscc: ssccs[0].NUM_PAL,
-            life_cycle_chrono: ssccs[0].CHRONO,
-            object_search_type: objectSearchType,
-            object_type: objectType,
-            object_number: objectNumber,
-            carton_number: cartonNumber,
-            location_address: convertLocationAddress(record),
-            event_type: 'sscc_enter_by_reappro',
-            action: 'entry',
-            action_detail: 'via_reappro',
-            previous_value: `No mère: ${record.NUM_PAL}`,
-            current_value: 'UD',
-            client_id: clientId,
-            warehouse_id: warehouseId,
-            company_id: companyId,
-            user_code_nom: userCodeNom,
-            movement_type: '2K',
-            movement_state: '1',
-            code: 'EP',
-            no_cdn: noCdns,
-          };
-        }
-      }
-
-      if (objectSearchType === 'sscc') {
-        referenceNumber = record.REF;
-        lotNom = record.NUM_IDF;
-        dluo = convertDLUO(record);
-        qte = record.QTE;
-        noCdns = [record.NUMERO];
-      } else {
-        sscc = '';
-        referenceNumber = '';
-        lotNom = '';
-        dluo = 0;
-        cartonNumber = 0;
-        qte = 0;
-        noCdns = [];
-      }
-
-      if (objectSearchType === 'sscc' && locationAddress == '') {
-        locationAddress = convertLocationAddress(record);
-      }
-
-      if (objectSearchType === 'sscc' && cartonNumber == 0) {
-        cartonNumber = record.QTE_SCDN;
-      }
-
-      if (extraEvent != null && extraEvent.object_search_type == 'sscc') {
-        extraEvent.reference_number = record.REF;
-        extraEvent.lot_nom = record.NUM_IDF;
-        extraEvent.dluo = convertDLUO(record);
-        extraEvent.carton_number = record.QTE_SCDN;
-        extraEvent.qte = record.QTE;
-        extraEvent.sscc = record.NUM_PAL;
-      }
-
-      if (
-        extraEvent != null &&
-        extraEvent.object_search_type == 'sscc' &&
-        extraEvent.no_cdn.length == 0
-      ) {
-        extraEvent.no_cdn = [record.NUMERO];
-      }
-
-      if (
-        extraEvent != null &&
-        extraEvent.object_search_type == 'sscc' &&
-        extraEvent.carton_number == 0
-      ) {
-        extraEvent.carton_number = record.QTE_SCDN;
-      }
-
-      if (previousValue == 'LI') {
-        previousValue = '';
-      }
-      if (currentValue == 'LI') {
-        currentValue = '';
-      }
-
-      if (eventType == '') {
-        continue;
-      }
-
-      const ssccRecord = mapSscc.get(record.NUM_PAL);
-      const mappedRecord = {
-        chrono: `${i + 1}`,
-        created_at: createdAt,
-        life_cycle_chrono: record.CHRONO,
-        object_search_type: objectSearchType,
-        object_type: objectType,
-        object_number: objectNumber,
-        event_type: eventType,
-        action: action,
-        action_detail: actionDetail,
-        previous_value: previousValue,
-        current_value: currentValue,
-        location_address: locationAddress,
-        qte: qte,
-        conditionement_level: convertConditionnementLevel(record),
-        carton_number: cartonNumber,
-        cadre: cadre,
-        client_id: clientId,
-        warehouse_id: warehouseId,
-        company_id: companyId,
-        reference_number: referenceNumber,
-        lot_nom: lotNom,
-        dluo: dluo,
-        sscc: sscc,
-        no_cdn: noCdns,
-        tier: tier,
-        extra_data: extraData,
-        user_code_nom: userCodeNom,
-        movement_type: movementType,
-        movement_state: movementState,
-        code: code,
-      };
-      mappedRecords.push(mappedRecord);
-
-      if (extraEvent != null) {
-        mappedRecords.push(extraEvent);
-      }
+    let insertedCount = 0;
+    for (let i = 0; i < mappedRecords.length; i += chunkSize) {
+      const result = await collection.insertMany(mappedRecords.slice(i, i + chunkSize), {
+        ordered: false,
+      });
+      insertedCount += result.insertedCount;
+      console.log(`Inserted ${insertedCount}/${mappedRecords.length}`);
     }
-
-    const result = await collection.insertMany(mappedRecords);
     // const result = await collection.insertOne(records[0]);
     // const result = await collection.insertMany(records);
 
-    console.log(`Successfully inserted ${result.insertedCount} records`);
+    console.log(`Successfully inserted ${insertedCount} records`);
   } catch (err) {
     console.error('Error during import:', err);
     throw err;
@@ -661,101 +139,6 @@ async function importDBFToMongoDB() {
 importDBFToMongoDB()
   .then(() => console.log('\nImport completed successfully!'))
   .catch((err) => console.error('\nImport failed:', err));
-
-function mergeDateAndTime(date, time) {
-  let created_at = null;
-
-  if (date && time) {
-    try {
-      // Create Date object from the input date
-      const dateObj = new Date(date);
-
-      // Parse time string (format: "HH:MM:SS")
-      const timeParts = time.split(':');
-      if (timeParts.length === 3) {
-        // Set time components using UTC methods to avoid local timezone issues
-        dateObj.setUTCHours(parseInt(timeParts[0], 10));
-        dateObj.setUTCMinutes(parseInt(timeParts[1], 10));
-        dateObj.setUTCSeconds(parseInt(timeParts[2], 10));
-        dateObj.setUTCMilliseconds(0);
-
-        // Convert to Unix timestamp (seconds since epoch)
-        // Input is UTC+1, so subtract 3600 seconds to get UTC+0
-        created_at = Math.floor(dateObj.getTime() / 1000) - 3600;
-      }
-    } catch (error) {
-      console.warn(`Failed to parse date/time for record:`, error.message);
-    }
-  }
-
-  return created_at;
-}
-
-function convertLocationAddress(record) {
-  let niv = record.NIVEAU;
-  let zone = record.ZONE;
-  let allee = record.ALLEE;
-  let trave = record.TRAVEE;
-
-  return refineLocationData(niv, zone, allee, trave);
-}
-
-function convertLocationAddressOut(record) {
-  let niv = record.NIV_ORI;
-  let zone = record.ZON_ORI;
-  let allee = record.ALL_ORI;
-  let trave = record.TRA_ORI;
-
-  return refineLocationData(niv, zone, allee, trave);
-}
-
-function refineLocationData(niv, zone, allee, trave) {
-  if (niv == '-1') {
-    niv = '00';
-  }
-
-  while (allee.length < 3) {
-    allee = allee + ' ';
-  }
-
-  if ((trave.length == 2 && niv.includes('D')) || niv.includes('E') || niv.includes('F')) {
-    trave = ' ' + trave;
-  }
-
-  if ((trave.length == 2 && niv.includes('A')) || niv.includes('B') || niv.includes('C')) {
-    trave = trave + ' ';
-  }
-
-  return `${zone}${allee}${trave}${niv}`;
-}
-
-function convertConditionnementLevel(record) {
-  if (record.TYP_CDN == 'PAL') {
-    return 3;
-  } else if (record.TYP_CDN == 'UD') {
-    return 2;
-  }
-
-  return 0;
-}
-
-function convertDLUO(record) {
-  let dluo = null;
-
-  if (record.DLUO) {
-    try {
-      // Parse ISO date string and convert to Unix timestamp (seconds since epoch)
-      const date = new Date(record.DLUO);
-      if (!isNaN(date.getTime())) {
-        dluo = Math.floor(date.getTime() / 1000);
-      }
-    } catch (error) {
-      console.warn(`Failed to parse DLUO date for record:`, error.message);
-    }
-  }
-
-  return dluo;
-}
 
 async function createMergedTable(db) {
   await queryDB(
