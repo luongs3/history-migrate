@@ -121,8 +121,11 @@ describe('helpers', () => {
     for (const c of ['12', '14', '7R', '2Z', '90', '91', '9D']) {
       assert.equal(KEEP_WITHOUT_DAT_VAL.has(c), true, c);
     }
-    // ROUND 3c: 61 is no longer kept without DAT_VAL (never migrated at all)
-    for (const c of ['10', '13', '24', '61', '71', '79']) {
+    // r298: 13 / 61 / 79 etat-0 rows have DAT_VAL NULL and must still reach their branch
+    for (const c of ['13', '61', '79']) {
+      assert.equal(KEEP_WITHOUT_DAT_VAL.has(c), true, c);
+    }
+    for (const c of ['10', '24', '71']) {
       assert.equal(KEEP_WITHOUT_DAT_VAL.has(c), false, c);
     }
   });
@@ -375,39 +378,43 @@ describe('ordering', () => {
 });
 
 describe('old-code fixes', () => {
-  test('case 9a: 12 DE gives A-1 + A-10', async () => {
+  test('case 9a: 12 DE gives one A-1 (EDI) + one sscc entry per received row', async () => {
     const docs = await run([
       { CHRONO: 1, TYP_MVT: '12', COD_MVT: 'DE', NUM_PAL: 'S1', NUM_BL: 'BL1', QTE_SCDN: 10 },
       { CHRONO: 2, TYP_MVT: '12', COD_MVT: 'RT', NUM_PAL: 'S2', NUM_BL: 'BL1', QTE_SCDN: 10 },
     ]);
     assert.deepEqual(
       docs.map((d) => d.event_type),
-      ['A-1', 'A-10']
+      ['A-1', 'sscc_legacy_entry', 'sscc_legacy_entry']
     );
     assert.equal(docs[0].object_search_type, 'attendu');
     assert.equal(docs[0].tier, 'FOU1');
     assert.equal(docs[0].sscc, '');
     assert.equal(docs[0].carton_number, 0);
-    assert.equal(docs[1].movement_type, '23');
-    assert.equal(docs[1].code, 'EX');
+    assert.equal(docs[1].sscc, 'S1');
+    assert.equal(docs[2].sscc, 'S2');
   });
 
-  test('case 9c: 10 is always manual + defective (CK and AR alike)', async () => {
+  test('case 9c (R10): 10 is an sscc creation line per row, no attendu doc', async () => {
     const docs = await run([
       { CHRONO: 1, TYP_MVT: '10', COD_MVT: 'CK', NUM_PAL: 'S1', NUM_BL: 'BLCK', QTE_SCDN: 10 },
-      { CHRONO: 2, TYP_MVT: '10', COD_MVT: 'AR', NUM_PAL: 'S2', NUM_BL: 'BLAR', QTE_SCDN: 10 },
+      { CHRONO: 2, TYP_MVT: '10', COD_MVT: 'AR', NUM_PAL: 'S2', NUM_BL: 'BLCK', QTE_SCDN: 10 },
+      { CHRONO: 3, TYP_MVT: '71', COD_MVT: 'SR', NUM_PAL: 'S1', QTE_SCDN: 4, QTE_SORI: 999 },
     ]);
-    assert.equal(docs.length, 2);
-    assert.equal(docs[0].event_type, 'A-1');
-    assert.equal(docs[0].object_number, 'BLCK');
-    assert.equal(docs[0].action, 'create');
-    assert.equal(docs[0].action_detail, 'manual');
-    assert.equal(docs[0].current_value, 'created');
-    assert.deepEqual(docs[0].extra_data, { is_deffective_attendu: true });
-    assert.equal(docs[1].event_type, 'A-1');
-    assert.equal(docs[1].object_number, 'BLAR');
-    assert.equal(docs[1].action_detail, 'manual');
-    assert.deepEqual(docs[1].extra_data, { is_deffective_attendu: true });
+    assert.equal(docs.length, 3);
+    for (const d of docs.slice(0, 2)) {
+      assert.equal(d.object_search_type, 'sscc');
+      assert.equal(d.event_type, 'sscc_legacy_created');
+      assert.equal(d.action, 'create');
+      assert.equal(d.action_detail, 'manual');
+      assert.equal(d.previous_value, '');
+      assert.equal(d.current_value, 'created');
+      assert.equal(d.cadre, 'BLCK');
+      assert.equal(d.created_at, mergeDateAndTime('2026-06-02', '11:00:00'));
+    }
+    assert.equal(docs.some((d) => d.object_search_type == 'attendu'), false);
+    // mapSscc seeded by 10
+    assert.deepEqual([docs[2].previous_value, docs[2].current_value], ['10', '6']);
   });
 
   test('case 9d: 71 on an unseen SSCC falls back to QTE_SORI', async () => {
@@ -423,14 +430,13 @@ describe('old-code fixes', () => {
     assert.equal(docs[1].current_value, '5');
   });
 
-  test('case 9e: DAT_VAL guard only applies to old codes; 30 always skipped; 79 never migrated', async () => {
+  test('case 9e: DAT_VAL guard only applies to old codes; 30 always skipped', async () => {
     const docs = await run([
       { CHRONO: 1, TYP_MVT: '2Q', COD_MVT: 'RZ', NUM_PAL: 'S1', QTE_SCDN: 3, DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
       { CHRONO: 2, TYP_MVT: '30', COD_MVT: 'XX', NUM_PAL: 'S1', QTE_SCDN: 3 },
       { CHRONO: 3, TYP_MVT: '24', COD_MVT: 'MV', NUM_PAL: 'S1', QTE_SCDN: 3, DAT_VAL: null, HEU_VAL: null },
       { CHRONO: 4, TYP_MVT: '24', COD_MVT: 'MV', NUM_PAL: 'S1', QTE_SCDN: 3 },
       { CHRONO: 5, TYP_MVT: '10', COD_MVT: 'CK', NUM_PAL: 'S1', NUM_BL: 'BL10', QTE_SCDN: 3, DAT_VAL: null, HEU_VAL: null },
-      { CHRONO: 6, TYP_MVT: '79', COD_MVT: 'SO', NUM_PAL: 'S1', NUM_CMD: 'C1', QTE_SCDN: 3, ETAT: '0', DAT_VAL: null, HEU_VAL: null },
       { CHRONO: 7, TYP_MVT: '71', COD_MVT: 'SR', NUM_PAL: 'S1', QTE_SCDN: 3, DAT_VAL: null, HEU_VAL: null },
     ]);
     assert.deepEqual(
@@ -442,154 +448,213 @@ describe('old-code fixes', () => {
   });
 });
 
-describe('round 3b: 79 is not migrated', () => {
-  const ROW = { TYP_MVT: '79', COD_MVT: 'SO', NUM_PAL: 'S1', NUM_CMD: 'CMD79', NUM_BL: 'BL79', QTE_SCDN: 6, QTE_SORI: 6 };
-
-  test('79 etat 0 (DAT_VAL NULL) -> no doc', async () => {
-    const docs = await run([
-      { CHRONO: 1, ...ROW, ETAT: '0', DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
-    ]);
-    assert.deepEqual(docs, []);
-  });
-
-  test('79 etat 2 (with DAT_VAL) -> no doc', async () => {
-    const docs = await run([
-      { CHRONO: 1, ...ROW, ETAT: '2', DAT_VAL: '2026-06-09', HEU_VAL: '12:00:00' },
-    ]);
-    assert.deepEqual(docs, []);
-  });
-
-  test('79 etat 1 (with DAT_VAL) -> no doc', async () => {
-    const docs = await run([
-      { CHRONO: 1, ...ROW, ETAT: '1', DAT_VAL: '2026-06-09', HEU_VAL: '12:00:00' },
-    ]);
-    assert.deepEqual(docs, []);
-  });
-
-  test('79 rows (any etat) are transparent to the surrounding SSCC chain', async () => {
-    const docs = await run([
-      { CHRONO: 1, TYP_MVT: '2Z', COD_MVT: 'CK', NUM_PAL: 'S1', QTE_SCDN: 8 },
-      { CHRONO: 2, ...ROW, ETAT: '0', DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
-      { CHRONO: 3, ...ROW, ETAT: '2', DAT_VAL: '2026-06-09', HEU_VAL: '12:00:00' },
-      { CHRONO: 4, ...ROW, ETAT: '1', DAT_VAL: '2026-06-09', HEU_VAL: '12:00:00' },
-      { CHRONO: 5, TYP_MVT: '71', COD_MVT: 'SR', NUM_PAL: 'S1', QTE_SCDN: 3, QTE_SORI: 999 },
-    ]);
-    assert.deepEqual(docs.map((d) => d.movement_type), ['2Z', '71']);
-    assert.equal(docs[1].chrono, '5');
-    // 79 no longer touches mapSscc -> 71 still sees the carton_number seeded by 2Z
-    assert.deepEqual([docs[1].previous_value, docs[1].current_value], ['8', '5']);
+describe('r298 R1: Paris time -> UTC', () => {
+  test('winter and summer offsets', () => {
+    assert.equal(mergeDateAndTime('2026-01-15', '10:00:00'), Date.UTC(2026, 0, 15, 9) / 1000);
+    assert.equal(mergeDateAndTime('2026-07-15', '10:00:00'), Date.UTC(2026, 6, 15, 8) / 1000);
+    assert.equal(mergeDateAndTime(null, '10:00:00'), null);
+    assert.equal(mergeDateAndTime('2026-07-15', 'bad'), null);
   });
 });
 
-describe('round 3: attendu 12 / 13 / 14', () => {
-  test('12 etat 0 only (DAT_VAL NULL) -> nothing (no A-1, no A-10)', async () => {
+describe('r298 R2/R3: is_legacy and tier', () => {
+  test('every doc is_legacy; sscc docs have empty tier', async () => {
+    const docs = await run([
+      { CHRONO: 1, TYP_MVT: '12', COD_MVT: 'DE', NUM_PAL: 'S1', NUM_BL: 'BL1', QTE_SCDN: 10 },
+      { CHRONO: 2, TYP_MVT: '23', COD_MVT: 'EX', NUM_PAL: 'S1', NUM_BL: 'BL1', QTE_SCDN: 10 },
+      { CHRONO: 3, TYP_MVT: '61', COD_MVT: 'PF', ETAT: '0', NUM_PAL: 'S1', NUM_CMD: 'C1', DAT_VAL: null, HEU_VAL: null },
+      { CHRONO: 4, TYP_MVT: '79', COD_MVT: 'SO', ETAT: '0', NUM_PAL: 'S1', NUM_CMD: 'C1', DAT_VAL: null, HEU_VAL: null },
+    ]);
+    assert.ok(docs.length >= 6);
+    for (const d of docs) {
+      assert.equal(d.is_legacy, true);
+      if (d.object_search_type == 'sscc') assert.equal(d.tier, '');
+    }
+    assert.equal(docs.find((d) => d.object_search_type == 'commande').tier, 'DES1');
+  });
+});
+
+describe('r298 R4/R5: attendu 12 / 13 / 14', () => {
+  test('12 etat 0 only -> exactly one A-1 (edi / EDI), nothing else', async () => {
     const docs = await run([
       { CHRONO: 1, TYP_MVT: '12', COD_MVT: 'DE', ETAT: '0', NUM_PAL: 'S1', NUM_BL: 'BL0', QTE_SCDN: 10, DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
       { CHRONO: 2, TYP_MVT: '12', COD_MVT: 'DE', ETAT: '0', NUM_PAL: 'S2', NUM_BL: 'BL0', QTE_SCDN: 10, DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
-      { CHRONO: 3, TYP_MVT: '2Q', COD_MVT: 'RZ', NUM_PAL: 'P1', QTE_SCDN: 3 },
     ]);
-    assert.deepEqual(docs.map((d) => d.movement_type), ['2Q']);
+    assert.equal(docs.length, 1);
+    const d = docs[0];
+    assert.deepEqual(
+      [d.event_type, d.action, d.action_detail, d.user_code_nom, d.previous_value, d.current_value, d.object_search_type, d.object_number, d.cadre, d.tier],
+      ['A-1', 'create', 'edi', 'EDI', '', 'created', 'attendu', 'BL0', 'BL0', 'FOU1']
+    );
+    assert.equal(d.created_at, mergeDateAndTime('2026-06-01', '10:00:00'));
   });
 
-  test('12 with one etat-0 + one etat-1 row -> A-1 (from the first row) + A-10 from the etat-1 row', async () => {
+  test('12 etat-0 + etat-1 -> A-1 from first row + sscc entry from the received row', async () => {
     const docs = await run([
       { CHRONO: 1, TYP_MVT: '12', COD_MVT: 'DE', ETAT: '0', NUM_PAL: 'S1', NUM_BL: 'BLM', QTE_SCDN: 10, DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
       { CHRONO: 2, TYP_MVT: '12', COD_MVT: 'DE', ETAT: '1', NUM_PAL: 'S2', NUM_BL: 'BLM', QTE_SCDN: 10, DAT_VAL: '2026-06-05', HEU_VAL: '09:30:00' },
     ]);
-    assert.deepEqual(
-      docs.map((d) => d.event_type),
-      ['A-1', 'A-10']
-    );
-    assert.equal(docs[0].action_detail, 'file');
-    assert.equal(docs[0].current_value, 'created');
-    assert.equal(docs[0].object_number, 'BLM');
-    assert.equal(docs[0].tier, 'FOU1');
+    assert.deepEqual(docs.map((d) => d.event_type), ['A-1', 'sscc_legacy_entry']);
     assert.equal(docs[0].movement_state, '0');
-    assert.equal(docs[0].created_at, mergeDateAndTime('2026-06-01', '10:00:00'));
-    assert.deepEqual(docs[0].extra_data, { is_deffective_attendu: false });
-    assert.equal(docs[1].created_at, mergeDateAndTime('2026-06-05', '09:30:00'));
-    assert.equal(docs[1].life_cycle_chrono, 2);
-    assert.equal(docs[1].movement_type, '23');
-    assert.equal(docs[1].code, 'EX');
+    const e = docs[1];
+    assert.deepEqual(
+      [e.object_search_type, e.action, e.action_detail, e.previous_value, e.current_value, e.sscc, e.user_code_nom, e.tier],
+      ['sscc', 'entry', '', '', '', 'S2', 'UVAL', '']
+    );
+    assert.equal(e.created_at, mergeDateAndTime('2026-06-05', '09:30:00'));
   });
 
-  test('13/PO -> not migrated, even with DAT_VAL', async () => {
+  test('13/PO BL -> A-1 + sscc entry', async () => {
     const docs = await run([
       { CHRONO: 1, TYP_MVT: '13', COD_MVT: 'PO', ETAT: '0', NUM_PAL: 'S1', NUM_BL: 'BL13', COD_FOU: 'FOU13', QTE_SCDN: 10, DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
       { CHRONO: 2, TYP_MVT: '13', COD_MVT: 'PO', ETAT: '1', NUM_PAL: 'S2', NUM_BL: 'BL13', COD_FOU: 'FOU13', QTE_SCDN: 10 },
-      { CHRONO: 3, TYP_MVT: '2Q', COD_MVT: 'RZ', NUM_PAL: 'P1', QTE_SCDN: 3 },
     ]);
-    assert.deepEqual(docs.map((d) => d.movement_type), ['2Q']);
+    assert.deepEqual(docs.map((d) => [d.object_number, d.event_type]), [['BL13', 'A-1'], ['S2', 'sscc_legacy_entry']]);
+    assert.equal(docs[0].tier, 'FOU13');
   });
 
-  test('14/CK etat 1 -> A-1 + A-10; etat-0-only BL -> nothing', async () => {
+  test('14/CK: one A-1 per BL; received rows seed mapSscc', async () => {
     const docs = await run([
       { CHRONO: 1, TYP_MVT: '14', COD_MVT: 'CK', ETAT: '1', NUM_PAL: 'S1', NUM_BL: 'BL14A', QTE_SCDN: 10 },
       { CHRONO: 2, TYP_MVT: '14', COD_MVT: 'CK', ETAT: '0', NUM_PAL: 'S2', NUM_BL: 'BL14B', QTE_SCDN: 10, DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
       { CHRONO: 3, TYP_MVT: '14', COD_MVT: 'CK', ETAT: '0', NUM_PAL: 'S3', NUM_BL: 'BL14B', QTE_SCDN: 10, DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
+      { CHRONO: 4, TYP_MVT: '71', COD_MVT: 'SR', NUM_PAL: 'S1', QTE_SCDN: 3, QTE_SORI: 999 },
     ]);
     assert.deepEqual(
       docs.map((d) => [d.object_number, d.event_type]),
-      [['BL14A', 'A-1'], ['BL14A', 'A-10']]
+      [['BL14A', 'A-1'], ['S1', 'sscc_legacy_entry'], ['BL14B', 'A-1'], ['S1', 'regularization_sortie']]
     );
-    assert.equal(docs[0].movement_type, '14');
-    assert.equal(docs[0].action_detail, 'file');
-    assert.equal(docs[0].tier, 'FOU1');
-    assert.equal(docs[0].current_value, 'created');
+    assert.deepEqual([docs[3].previous_value, docs[3].current_value], ['10', '7']);
+  });
+});
+
+describe('r298 R6: 23/EX', () => {
+  test('same location -> A-9-1 received_at_dock + sscc_received_at_dock', async () => {
+    const docs = await run([
+      { CHRONO: 1, TYP_MVT: '23', COD_MVT: 'EX', NUM_PAL: 'S1', NUM_BL: 'BL1', QTE_SCDN: 5, ZON_ORI: 'RK', ALL_ORI: 'REC', TRA_ORI: '800', NIV_ORI: '00' },
+    ]);
+    assert.equal(docs.length, 2);
+    const [a, s] = docs;
+    assert.deepEqual(
+      [a.object_search_type, a.event_type, a.action_detail, a.previous_value, a.current_value, a.object_number, a.tier, a.location_address],
+      ['attendu', 'A-9-1', 'received_at_dock', 'in_reception', 'reput_away', 'BL1', 'FOU1', 'RKREC80000']
+    );
+    assert.deepEqual(
+      [s.object_search_type, s.event_type, s.action_detail, s.previous_value, s.current_value, s.sscc, s.tier, s.location_address],
+      ['sscc', 'sscc_received_at_dock', 'received_at_dock', 'in_reception', 'reput_away', 'S1', '', 'RKREC80000']
+    );
   });
 
-  test('12 etat-0 row of BL A does not block BL B that has an etat-1 row', async () => {
+  test('different location -> A-9-2 put_in_stock + sscc_putaway_done', async () => {
     const docs = await run([
-      { CHRONO: 1, TYP_MVT: '12', COD_MVT: 'DE', ETAT: '0', NUM_PAL: 'S1', NUM_BL: 'BLA', QTE_SCDN: 10, DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
-      { CHRONO: 2, TYP_MVT: '12', COD_MVT: 'DE', ETAT: '1', NUM_PAL: 'S2', NUM_BL: 'BLB', QTE_SCDN: 10 },
+      { CHRONO: 1, TYP_MVT: '23', COD_MVT: 'EX', NUM_PAL: 'S1', NUM_BL: 'BL1', QTE_SCDN: 5 },
     ]);
+    assert.equal(docs.length, 2);
+    const [a, s] = docs;
     assert.deepEqual(
-      docs.map((d) => [d.object_number, d.event_type]),
-      [['BLB', 'A-1'], ['BLB', 'A-10']]
+      [a.object_search_type, a.event_type, a.action_detail, a.previous_value, a.current_value, a.location_address],
+      ['attendu', 'A-9-2', 'put_in_stock', 'in_storage', 'put_away', 'SD006G3100']
+    );
+    assert.deepEqual(
+      [s.event_type, s.action_detail, s.previous_value, s.current_value, s.location_address, s.carton_number, s.reference_number],
+      ['sscc_putaway_done', 'put_in_stock', 'in_storage', 'put_away', 'RKREC80000', '5', 'REF1']
     );
   });
 });
 
-describe('round 3c: commande 61 never migrated', () => {
-  // BA rule (2026-10-14, final): NWF migration is current stock only — 61 rows
-  // produce no C-1 and no C-17, whether or not the commande is finished.
-  const LOADED = { TYP_MVT: '79', COD_MVT: 'SO', ETAT: '1', NUM_PAL: 'S9', QTE_SCDN: 10, DAT_VAL: '2026-06-09', HEU_VAL: '12:00:00' };
+describe('r298 R7/R8/R9: commande 61 / 79', () => {
+  const C61 = { TYP_MVT: '61', COD_MVT: 'PF', NUM_PAL: 'S1', QTE_SCDN: 10 };
+  const C79 = { TYP_MVT: '79', COD_MVT: 'SO', NUM_PAL: 'S9', QTE_SCDN: 10 };
+  const commande = (docs) => docs.filter((d) => d.object_search_type == 'commande');
 
-  test('61 etat 0 only, no 79 -> nothing', async () => {
+  test('any 79 etat 1 -> no commande docs, no 79-1 sscc doc', async () => {
     const docs = await run([
-      { CHRONO: 1, TYP_MVT: '61', COD_MVT: 'PF', ETAT: '0', NUM_PAL: 'S1', NUM_CMD: 'CMD0', QTE_SCDN: 10, DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
-      { CHRONO: 2, TYP_MVT: '61', COD_MVT: 'PF', ETAT: '0', NUM_PAL: 'S2', NUM_CMD: 'CMD0', QTE_SCDN: 10, DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
+      { CHRONO: 1, ...C61, ETAT: '0', NUM_CMD: 'CMDM', DAT_VAL: null, HEU_VAL: null },
+      { CHRONO: 2, ...C79, ETAT: '0', NUM_CMD: 'CMDM', DAT_VAL: null, HEU_VAL: null },
+      { CHRONO: 3, ...C79, ETAT: '1', NUM_CMD: 'CMDM' },
     ]);
+    assert.deepEqual(commande(docs), []);
+    assert.deepEqual(docs.map((d) => [d.movement_type, d.movement_state]), [['79', '0']]);
+  });
+
+  test('61 etat 0 only -> C-1 only, no sscc doc for 61', async () => {
+    const docs = await run([
+      { CHRONO: 1, ...C61, ETAT: '0', NUM_CMD: 'CMD0', DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
+      { CHRONO: 2, ...C61, ETAT: '0', NUM_PAL: 'S2', NUM_CMD: 'CMD0', DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
+    ]);
+    assert.equal(docs.length, 1);
+    const d = docs[0];
+    assert.deepEqual(
+      [d.event_type, d.action, d.action_detail, d.user_code_nom, d.previous_value, d.current_value, d.object_number, d.cadre, d.tier, d.object_type],
+      ['C-1', 'create', 'edi', 'EDI', '', 'created', 'CMD0', 'CMD0', 'DES1', 'commande']
+    );
+    assert.equal(d.created_at, mergeDateAndTime('2026-06-01', '10:00:00'));
+  });
+
+  test('61 etat 1 only -> nothing', async () => {
+    const docs = await run([{ CHRONO: 1, ...C61, ETAT: '1', NUM_CMD: 'CMDU' }]);
     assert.deepEqual(docs, []);
   });
 
-  test('61 etat 1 (with DAT_VAL), no 79 -> nothing', async () => {
+  test('61-0 + 79-0 -> C-1 + C-8 prepa_sent + 79 reserved sscc line', async () => {
     const docs = await run([
-      { CHRONO: 1, TYP_MVT: '61', COD_MVT: 'PF', ETAT: '1', NUM_PAL: 'S1', NUM_CMD: 'CMDU', QTE_SCDN: 10, DAT_VAL: '2026-06-07', HEU_VAL: '15:00:00' },
+      { CHRONO: 1, ...C61, ETAT: '0', NUM_CMD: 'CMDP', DAT_VAL: null, HEU_VAL: null },
+      { CHRONO: 2, ...C79, ETAT: '0', NUM_CMD: 'CMDP', UTI_CRE: 'PREP', HEU_CRE: '12:00:00', DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
     ]);
-    assert.deepEqual(docs, []);
+    assert.deepEqual(docs.map((d) => d.event_type), ['C-1', 'C-8', '24']);
+    const e = docs[1];
+    assert.deepEqual(
+      [e.action, e.action_detail, e.previous_value, e.current_value, e.user_code_nom, e.tier],
+      ['edit', 'edit_update', '', 'prepa_sent', 'PREP', 'DES1']
+    );
+    assert.equal(e.created_at, mergeDateAndTime('2026-06-01', '12:00:00'));
+    const s = docs[2];
+    assert.deepEqual(
+      [s.object_search_type, s.action, s.action_detail, s.previous_value, s.current_value, s.cadre, s.user_code_nom, s.tier],
+      ['sscc', 'exit', 'reserved', 'dispo', 'reserved', 'CMDP', 'PREP', '']
+    );
+    assert.equal(s.created_at, mergeDateAndTime('2026-06-01', '12:00:00'));
   });
 
-  test('61 etat 0 + etat 1 + 79 etat 1 (finished commande) -> still nothing', async () => {
+  test('79-2 -> C-8 preparing (wins over 79-0) + prepared sscc line', async () => {
     const docs = await run([
-      { CHRONO: 1, TYP_MVT: '61', COD_MVT: 'PF', ETAT: '0', NUM_PAL: 'S1', NUM_CMD: 'CMDM', QTE_SCDN: 10, DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
-      { CHRONO: 2, TYP_MVT: '61', COD_MVT: 'PF', ETAT: '1', NUM_PAL: 'S2', NUM_CMD: 'CMDM', QTE_SCDN: 10, DAT_VAL: '2026-06-07', HEU_VAL: '15:00:00' },
-      { CHRONO: 3, ...LOADED, NUM_CMD: 'CMDM' },
+      { CHRONO: 1, ...C79, ETAT: '0', NUM_CMD: 'CMD2', DAT_VAL: null, HEU_VAL: null },
+      { CHRONO: 2, ...C79, ETAT: '2', NUM_CMD: 'CMD2', UTI_CRE: 'P2', DAT_VAL: '2026-06-09', HEU_VAL: '12:00:00' },
     ]);
-    assert.deepEqual(docs, []);
+    assert.deepEqual(docs.map((d) => [d.event_type, d.current_value]), [
+      ['C-1', 'created'], ['C-8', 'preparing'], ['24', 'reserved'], ['24', 'prepared'],
+    ]);
+    assert.equal(docs[1].user_code_nom, 'P2');
+    assert.equal(docs[1].created_at, mergeDateAndTime('2026-06-09', '12:00:00'));
+    assert.deepEqual([docs[3].action_detail, docs[3].previous_value, docs[3].user_code_nom], ['prepared', 'preparing', 'UVAL']);
   });
 
-  test('61 rows (any etat, with 79 etat 0/1/2) are transparent to surrounding codes', async () => {
+  test('commande docs are emitted once, at its first row, and do not disturb sscc chains', async () => {
     const docs = await run([
-      { CHRONO: 1, TYP_MVT: '61', COD_MVT: 'PF', ETAT: '1', NUM_PAL: 'S1', NUM_CMD: 'CMDA', QTE_SCDN: 10 },
-      { CHRONO: 2, ...LOADED, ETAT: '0', NUM_CMD: 'CMDA', DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
-      { CHRONO: 3, ...LOADED, ETAT: '2', NUM_CMD: 'CMDA' },
-      { CHRONO: 4, ...LOADED, NUM_CMD: 'CMDA' },
-      { CHRONO: 5, TYP_MVT: '61', COD_MVT: 'PF', ETAT: '0', NUM_PAL: 'S2', NUM_CMD: 'CMDB', QTE_SCDN: 10, DAT_VAL: null, HEU_VAL: null, UTI_VAL: null },
-      { CHRONO: 6, TYP_MVT: '2Q', COD_MVT: 'RZ', NUM_PAL: 'P1', QTE_SCDN: 3 },
+      { CHRONO: 1, TYP_MVT: '2Z', COD_MVT: 'CK', NUM_PAL: 'S1', QTE_SCDN: 8 },
+      { CHRONO: 2, ...C61, ETAT: '0', NUM_CMD: 'CMDA', DAT_VAL: null, HEU_VAL: null },
+      { CHRONO: 3, ...C61, ETAT: '0', NUM_CMD: 'CMDA', DAT_VAL: null, HEU_VAL: null },
+      { CHRONO: 4, TYP_MVT: '71', COD_MVT: 'SR', NUM_PAL: 'S1', QTE_SCDN: 3, QTE_SORI: 999 },
     ]);
-    assert.deepEqual(docs.map((d) => d.movement_type), ['2Q']);
-    assert.equal(docs.some((d) => d.object_search_type == 'commande'), false);
+    assert.deepEqual(docs.map((d) => d.event_type), ['sscc_enter_by_copacking', 'C-1', 'regularization_sortie']);
+    assert.deepEqual([docs[2].previous_value, docs[2].current_value], ['8', '5']);
+  });
+});
+
+describe('r298 R11: support SSCC keep-set', () => {
+  test('support kept only when latest 30 row has QTE_SCDN > 0', async () => {
+    const docs = await run([
+      { CHRONO: 1, TYP_MVT: '90', COD_MVT: 'EN', NUM_PAL: 'K1', REF: '009A', QTE_SCDN: 3 },
+      { CHRONO: 2, TYP_MVT: '90', COD_MVT: 'EN', NUM_PAL: 'K2', REF: '009A', QTE_SCDN: 3 },
+      { CHRONO: 3, TYP_MVT: '90', COD_MVT: 'EN', NUM_PAL: 'K3', REF: '009A', QTE_SCDN: 3 },
+      { CHRONO: 4, TYP_MVT: '30', COD_MVT: 'XX', NUM_PAL: 'K1', REF: '009A', QTE_SCDN: 0 },
+      { CHRONO: 5, TYP_MVT: '30', COD_MVT: 'XX', NUM_PAL: 'K1', REF: '009A', QTE_SCDN: 2 },
+      { CHRONO: 4, TYP_MVT: '30', COD_MVT: 'XX', NUM_PAL: 'K2', REF: '009A', QTE_SCDN: 2 },
+      { CHRONO: 5, TYP_MVT: '30', COD_MVT: 'XX', NUM_PAL: 'K2', REF: '009A', QTE_SCDN: 0 },
+      { CHRONO: 6, TYP_MVT: '91', COD_MVT: 'SR', NUM_PAL: 'K2', REF: '009A', QTE_SCDN: 1 },
+      { CHRONO: 7, TYP_MVT: '2Q', COD_MVT: 'RZ', NUM_PAL: 'P1', QTE_SCDN: 3 },
+    ]);
+    assert.deepEqual(docs.map((d) => d.sscc), ['K1', 'P1']);
   });
 });
 
