@@ -774,3 +774,40 @@ describe('round 2: new sscc codes', () => {
     assert.deepEqual([docs[1].previous_value, docs[1].current_value], ['8', '5']);
   });
 });
+
+describe('r298 review fixes', () => {
+  // 009 support with no 30 row -> not in the keep-set -> dropped
+  const SUP = { REF: '009SUP', NUM_PAL: 'SUP1', QTE_SCDN: 10 };
+
+  test('dropped-support etat-0 attendu BL -> exactly one A-1, no sscc doc', async () => {
+    const docs = await run([
+      { CHRONO: 1, ...SUP, TYP_MVT: '12', COD_MVT: 'DE', ETAT: '0', NUM_BL: 'BLS', DAT_VAL: null, HEU_VAL: null },
+      { CHRONO: 2, ...SUP, TYP_MVT: '12', COD_MVT: 'DE', ETAT: '1', NUM_BL: 'BLS' },
+    ]);
+    assert.deepEqual(docs.map((d) => [d.object_search_type, d.event_type]), [['attendu', 'A-1']]);
+  });
+
+  test('dropped-support 79-0 commande -> C-1 + C-8, no sscc 79 line', async () => {
+    const docs = await run([
+      { CHRONO: 1, ...SUP, TYP_MVT: '79', COD_MVT: 'SO', ETAT: '0', NUM_CMD: 'CMDS', DAT_VAL: null, HEU_VAL: null },
+    ]);
+    assert.deepEqual(docs.map((d) => [d.object_search_type, d.event_type]), [['commande', 'C-1'], ['commande', 'C-8']]);
+  });
+
+  test('empty NUM_CMD 61 row -> no commande doc', async () => {
+    const docs = await run([
+      { CHRONO: 1, TYP_MVT: '61', COD_MVT: 'PF', ETAT: '0', NUM_PAL: 'S1', NUM_CMD: '', DAT_VAL: null, HEU_VAL: null },
+      { CHRONO: 2, TYP_MVT: '61', COD_MVT: 'PF', ETAT: '0', NUM_PAL: 'S2', NUM_CMD: null, DAT_VAL: null, HEU_VAL: null },
+    ]);
+    assert.deepEqual(docs.filter((d) => d.object_search_type == 'commande'), []);
+  });
+
+  test('sscc_legacy_entry user = UTI_VAL (fallback UTI_CRE)', async () => {
+    const docs = await run([
+      { CHRONO: 1, TYP_MVT: '12', COD_MVT: 'DE', ETAT: '1', NUM_PAL: 'S1', NUM_BL: 'BLU', UTI_VAL: 'VALU', UTI_CRE: 'CREU' },
+      { CHRONO: 2, TYP_MVT: '12', COD_MVT: 'DE', ETAT: '1', NUM_PAL: 'S2', NUM_BL: 'BLU', UTI_VAL: null, UTI_CRE: 'CREU' },
+    ]);
+    const e = docs.filter((d) => d.event_type == 'sscc_legacy_entry');
+    assert.deepEqual(e.map((d) => d.user_code_nom), ['VALU', 'CREU']);
+  });
+});
