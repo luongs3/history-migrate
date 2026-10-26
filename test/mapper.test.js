@@ -694,6 +694,17 @@ describe('round 2: new sscc codes', () => {
     assert.equal(docs[0].carton_number, '5');
   });
 
+  test('21/RV retour de vides of a support is movement 92', async () => {
+    const docs = await run([
+      { CHRONO: 1, TYP_MVT: '21', COD_MVT: 'RV', NUM_PAL: 'S1', REF: '0090029301', QTE_SCDN: 1, ...COMMON },
+      { CHRONO: 2, TYP_MVT: '30', COD_MVT: '', ETAT: '0', NUM_PAL: 'S1', REF: '0090029301', QTE_SCDN: 1, ...COMMON },
+    ]);
+    const rv = docs.filter((d) => d.event_type == 'sscc_stock_retour_vide_created');
+    assert.equal(rv.length, 1);
+    assert.equal(rv[0].movement_type, '92');
+    assert.equal(rv[0].code, 'RV');
+  });
+
   test('22 transfert inter-dépôts entrée (CK and TF)', async () => {
     const docs = await run([
       { CHRONO: 1, TYP_MVT: '22', COD_MVT: 'CK', NUM_PAL: 'S1', QTE_SCDN: 12, ...COMMON },
