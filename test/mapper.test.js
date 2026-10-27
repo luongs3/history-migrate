@@ -562,6 +562,23 @@ describe('r298 R6: 23/EX', () => {
   });
 });
 
+describe('r334: one attendu Entrée per BL', () => {
+  test('3 pallets put away -> 1 A-9-2 (last row) + 3 sscc lines', async () => {
+    const docs = await run([
+      { CHRONO: 1, TYP_MVT: '23', COD_MVT: 'EX', NUM_PAL: 'S1', NUM_BL: 'BL1', QTE_SCDN: 5, HEU_VAL: '11:00:00' },
+      { CHRONO: 2, TYP_MVT: '23', COD_MVT: 'EX', NUM_PAL: 'S2', NUM_BL: 'BL1', QTE_SCDN: 6, HEU_VAL: '11:01:00' },
+      { CHRONO: 3, TYP_MVT: '23', COD_MVT: 'EX', NUM_PAL: 'S3', NUM_BL: 'BL1', QTE_SCDN: 7, HEU_VAL: '11:02:00', UTI_VAL: 'LAST' },
+      { CHRONO: 4, TYP_MVT: '23', COD_MVT: 'EX', NUM_PAL: 'S4', NUM_BL: 'BL2', QTE_SCDN: 8 },
+    ]);
+    const att = docs.filter((d) => d.object_search_type === 'attendu');
+    assert.deepEqual(att.map((d) => [d.object_number, d.event_type]), [['BL1', 'A-9-2'], ['BL2', 'A-9-2']]);
+    assert.equal(att[0].created_at, mergeDateAndTime('2026-06-02', '11:02:00'));
+    assert.equal(att[0].user_code_nom, 'LAST');
+    const sscc = docs.filter((d) => d.object_search_type === 'sscc');
+    assert.deepEqual(sscc.map((d) => [d.sscc, d.carton_number]), [['S1', '5'], ['S2', '6'], ['S3', '7'], ['S4', '8']]);
+  });
+});
+
 describe('r298 R7/R8/R9: commande 61 / 79', () => {
   const C61 = { TYP_MVT: '61', COD_MVT: 'PF', NUM_PAL: 'S1', QTE_SCDN: 10 };
   const C79 = { TYP_MVT: '79', COD_MVT: 'SO', NUM_PAL: 'S9', QTE_SCDN: 10 };
