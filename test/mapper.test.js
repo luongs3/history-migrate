@@ -616,17 +616,26 @@ describe('r298 R7/R8/R9: commande 61 / 79', () => {
     assert.equal(s.created_at, mergeDateAndTime('2026-06-01', '12:00:00'));
   });
 
-  test('79-2 -> C-8 preparing (wins over 79-0) + prepared sscc line', async () => {
+  test('79-2 only -> C-8 preparing + prepared sscc line', async () => {
     const docs = await run([
-      { CHRONO: 1, ...C79, ETAT: '0', NUM_CMD: 'CMD2', DAT_VAL: null, HEU_VAL: null },
       { CHRONO: 2, ...C79, ETAT: '2', NUM_CMD: 'CMD2', UTI_CRE: 'P2', DAT_VAL: '2026-06-09', HEU_VAL: '12:00:00' },
     ]);
     assert.deepEqual(docs.map((d) => [d.event_type, d.current_value]), [
-      ['C-1', 'created'], ['C-8', 'preparing'], ['24', 'reserved'], ['24', 'prepared'],
+      ['C-1', 'created'], ['C-8', 'preparing'], ['24', 'prepared'],
     ]);
     assert.equal(docs[1].user_code_nom, 'P2');
     assert.equal(docs[1].created_at, mergeDateAndTime('2026-06-09', '12:00:00'));
-    assert.deepEqual([docs[3].action_detail, docs[3].previous_value, docs[3].user_code_nom], ['prepared', 'preparing', 'UVAL']);
+    assert.deepEqual([docs[2].action_detail, docs[2].previous_value, docs[2].user_code_nom], ['prepared', 'preparing', 'UVAL']);
+  });
+
+  test('r334: 79-2 + 79-0 (partly prepared) -> C-8 prepa_sent dated at the first 79 row', async () => {
+    const docs = await run([
+      { CHRONO: 1, ...C79, ETAT: '2', NUM_CMD: 'CMDM', UTI_CRE: 'P1', DAT_CRE: '2026-06-03', HEU_CRE: '09:00:00', DAT_VAL: '2026-06-09', HEU_VAL: '12:00:00' },
+      { CHRONO: 2, ...C79, ETAT: '0', NUM_CMD: 'CMDM', DAT_VAL: null, HEU_VAL: null },
+    ]);
+    const c8 = docs.find((d) => d.event_type === 'C-8');
+    assert.deepEqual([c8.current_value, c8.user_code_nom], ['prepa_sent', 'P1']);
+    assert.equal(c8.created_at, mergeDateAndTime('2026-06-03', '09:00:00'));
   });
 
   test('commande docs are emitted once, at its first row, and do not disturb sscc chains', async () => {
@@ -820,5 +829,37 @@ describe('r298 review fixes', () => {
     ]);
     const e = docs.filter((d) => d.event_type == 'sscc_legacy_entry');
     assert.deepEqual(e.map((d) => d.user_code_nom), ['VALU', 'CREU']);
+  });
+});
+
+describe('r334 partly received BL', () => {
+  const A12 = { TYP_MVT: '12', COD_MVT: 'DE', NUM_BL: 'BLP' };
+  test('received + announced pallets -> one A-8 mission_sent, dated at run, migration user', async () => {
+    const db = await openDB();
+    try {
+      const cols = COLUMNS.map((c) => (c === 'CHRONO' ? 'CHRONO REAL' : `${c} TEXT`)).join(', ');
+      await runSql(db, `CREATE TABLE eqhistormerged (${cols})`);
+      const rows = [
+        { CHRONO: 1, ...A12, ETAT: '1', NUM_PAL: 'P1' },
+        { CHRONO: 2, ...A12, ETAT: '0', NUM_PAL: 'P2', DAT_VAL: null, HEU_VAL: null },
+        { CHRONO: 3, TYP_MVT: '23', COD_MVT: 'EX', NUM_BL: 'BLP', NUM_PAL: 'P1' },
+        { CHRONO: 4, ...A12, NUM_BL: 'BLF', ETAT: '0', NUM_PAL: 'P3', DAT_VAL: null, HEU_VAL: null },
+      ];
+      const placeholders = COLUMNS.map(() => '?').join(', ');
+      for (const row of rows) {
+        const full = { ...BASE, ...row };
+        await runSql(db, `INSERT INTO eqhistormerged (${COLUMNS.join(', ')}) VALUES (${placeholders})`, COLUMNS.map((c) => (full[c] === undefined ? null : full[c])));
+      }
+      const records = await all(db, 'SELECT * FROM eqhistormerged ORDER BY CHRONO');
+      const docs = await mapRecords({ records, queryDB: (sql, p) => all(db, sql, p), ctx: { ...ctx, runAt: 1800000000, migrationUser: 'MIG' } });
+      const a8 = docs.filter((d) => d.event_type === 'A-8');
+      assert.equal(a8.length, 1);
+      assert.deepEqual(
+        [a8[0].object_number, a8[0].action, a8[0].action_detail, a8[0].current_value, a8[0].created_at, a8[0].user_code_nom, a8[0].movement_type, a8[0].movement_state, a8[0].is_legacy],
+        ['BLP', 'edit', 'edit_update', 'mission_sent', 1800000000, 'MIG', '10', '2', true]
+      );
+    } finally {
+      db.close();
+    }
   });
 });

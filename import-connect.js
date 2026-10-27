@@ -109,7 +109,7 @@ async function importDBFToMongoDB() {
     const mappedRecords = await mapRecords({
       records,
       queryDB: (sql, params) => queryDB(db, sql, params),
-      ctx: { clientId, warehouseId, companyId, mergedTable },
+      ctx: { clientId, warehouseId, companyId, mergedTable, migrationUser: process.env.MIGRATION_USER || '6625-Clémence God' },
     });
     console.log(`Mapped ${mappedRecords.length} records`);
 
